@@ -410,8 +410,20 @@ function mergeIngredients(recipes){
         } else {
           const existing = merged.get(matchKey);
           existing.recipeTitles.add(r.title);
-          if(existing.unit === unit) existing.qty += qty;
-          else existing.qty = Math.max(existing.qty, 1) + 1; // different/no units — just count occurrences
+          if(existing.unit === unit){
+            existing.qty += qty;
+          } else if(existing.unit && !unit){
+            // this mention had no amount (e.g. "Onion, garlic") — count it
+            // as one more, but don't throw away the real unit we already have
+            existing.qty += 1;
+          } else if(!existing.unit && unit){
+            // we finally saw a real amount+unit — adopt it instead of the
+            // bare occurrence count so the list shows "3 cloves" not "3"
+            existing.unit = unit;
+            existing.qty = qty;
+          } else {
+            existing.qty = Math.max(existing.qty, 1) + 1; // genuinely different units — just count occurrences
+          }
           if(term.length < existing.term.length) existing.term = term; // prefer the shorter, more generic label
         }
       });
