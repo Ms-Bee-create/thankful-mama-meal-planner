@@ -349,6 +349,14 @@ const PREP_ONLY_WORDS = new Set([
 // cheese, to serve") — these describe how to prep or plate the dish, not
 // something to shop for.
 const PREP_PHRASE_RE = /^(cut (into|in)\b|to (serve|taste)\b|for (serving|garnish|topping)\b|plus more\b|for the .+)/i;
+const VOLUME_TSP = { tsp: 1, tbsp: 3, cup: 48 };
+// Converts a normalized teaspoon amount back into whatever reads most
+// naturally — nobody wants to see "48 tsp" when "1 cup" is the same thing.
+function formatVolume(tsp){
+  if(tsp >= 48) return { qty: Math.round((tsp / 48) * 4) / 4, unit: "cup" };
+  if(tsp >= 3) return { qty: Math.round((tsp / 3) * 2) / 2, unit: "tbsp" };
+  return { qty: Math.round(tsp * 2) / 2, unit: "tsp" };
+}
 const QTY_UNIT_RE = /^\s*(\d+\s?\/\s?\d+|\d+\.\d+|\d+)\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct|gallon|gallons|gal|quart|quarts|qt|pint|pints|dozen)?\.?\s+/i;
 
 function parseFraction(str){
@@ -375,6 +383,15 @@ function parseIngredientParts(ingredient){
         qty = parseFraction(m[1]) || 1;
         unit = m[2] ? m[2].toLowerCase().replace(/s$/, "") : null;
         part = part.slice(m[0].length).trim();
+      }
+      // Normalize tsp/tbsp/cup to a common base (teaspoons) so "1/4 cup
+      // butter" in one recipe and "2 Tbsp butter" in another actually
+      // combine into one line instead of sitting as two separate amounts
+      // that each independently default to "buy 1 pack" — which could mean
+      // ordering two sticks of butter when one would cover both recipes.
+      if(unit && VOLUME_TSP[unit]){
+        qty = qty * VOLUME_TSP[unit];
+        unit = "tsp";
       }
       // Bare "pepper" (e.g. split out of "Salt & pepper") is ambiguous —
       // could read as any pepper product in a search. When a recipe means
@@ -643,16 +660,20 @@ function renderShopList(){
     const key = m.term.toLowerCase();
     const excluded = excludedFromList.has(key);
     const fromLabel = ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>`;
+    // "tsp" is our internal normalized marker for anything measured in
+    // tsp/tbsp/cup — convert back to whichever of those reads most
+    // naturally for the combined total before displaying it.
+    const display = m.unit === "tsp" ? formatVolume(m.qty) : { qty: m.qty, unit: m.unit };
     // Unit-based amounts read fine leading with the number ("1 lb ground
     // beef"). Unit-less counts ("need 2 egg") read badly leading with the
     // number, since we don't know the plural of every ingredient name — so
     // put those after the term instead: "egg — need 2".
     const NO_PLURAL_UNITS = new Set(["oz", "tsp", "tbsp", "ct", "dozen"]);
-    const unitLabel = m.unit && m.qty !== 1 && !NO_PLURAL_UNITS.has(m.unit) ? `${m.unit}s` : m.unit;
-    const itemLine = m.unit
-      ? `<strong>${escapeHtml(`${m.qty} ${unitLabel}`)}</strong> ${escapeHtml(m.term)}`
-      : (m.qty > 1
-        ? `${escapeHtml(m.term)} <strong>— need ${m.qty}</strong>`
+    const unitLabel = display.unit && display.qty !== 1 && !NO_PLURAL_UNITS.has(display.unit) ? `${display.unit}s` : display.unit;
+    const itemLine = display.unit
+      ? `<strong>${escapeHtml(`${display.qty} ${unitLabel}`)}</strong> ${escapeHtml(m.term)}`
+      : (display.qty > 1
+        ? `${escapeHtml(m.term)} <strong>— need ${display.qty}</strong>`
         : escapeHtml(m.term));
 
     const row = document.createElement("div");

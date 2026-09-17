@@ -162,6 +162,29 @@ Deno.serve(async (req) => {
   const PACK_COUNT_UNITS = new Set(["can", "cans", "jar", "jars", "bag", "bags", "pkg", "packet", "packets"]);
   const WEIGHT_UNITS = new Set(["oz", "lb"]);
 
+  // The client normalizes tsp/tbsp/cup to a single "tsp" unit so amounts of
+  // the same ingredient combine into one line instead of several. To turn
+  // that into a real pack count we estimate the ingredient's weight from a
+  // rough, ingredient-specific density (cups aren't a weight on their own —
+  // a cup of butter and a cup of flour weigh very differently). This is an
+  // approximation, not a conversion chart — good enough to avoid buying an
+  // obviously wrong number of packs, not exact for every ingredient.
+  const OZ_PER_CUP: [RegExp, number][] = [
+    [/\bbutter\b/i, 8],
+    [/\b(vegetable|olive|canola|sesame|avocado)?\s*oil\b/i, 7.7],
+    [/\bbrown sugar\b/i, 7.5],
+    [/\bsugar\b/i, 7],
+    [/\bflour\b/i, 4.25],
+    [/\bmayo(nnaise)?\b/i, 8],
+    [/\bsour cream\b/i, 8],
+    [/\bpeanut butter\b/i, 9],
+    [/\bhoney\b/i, 12],
+  ];
+  function ozPerCupFor(term: string): number | null {
+    for (const [re, oz] of OZ_PER_CUP) if (re.test(term)) return oz;
+    return null;
+  }
+
   for (const { term, qty, isCount, unit } of normalizedItems) {
     // Pull a handful of candidates rather than just the top hit, so we can
     // pick the cheapest one instead of whatever Kroger's default ranking
@@ -268,10 +291,24 @@ Deno.serve(async (req) => {
     } else if (unit && PACK_COUNT_UNITS.has(unit)) {
       // "2 cans diced tomatoes" already means 2 packages, literally.
       cartQty = Math.max(1, Math.round(qty));
+    } else if (unit === "tsp") {
+      // The client normalizes tsp/tbsp/cup amounts down to teaspoons so
+      // they combine across recipes. Estimate ounces needed from a rough
+      // density for ingredients we recognize (butter, oil, sugar…) and
+      // convert that against the matched product's real pack size — e.g.
+      // five recipes each using 1/4 cup butter is over 2 sticks, not 1.
+      // Falls back to 1 pack for ingredients with no density estimate,
+      // same as any other small culinary measure.
+      const ozPerCup = ozPerCupFor(term);
+      if (ozPerCup) {
+        const neededOz = (qty / 48) * ozPerCup;
+        const packOz = packOzFromSize(packSize);
+        cartQty = packOz ? Math.max(1, Math.ceil(neededOz / packOz)) : 1;
+      }
     }
-    // Anything else (cup, tsp, tbsp, clove, slice…) is a small culinary
-    // measure, not a retail pack size — one package covers it, so cartQty
-    // stays at 1 rather than multiplying by the recipe's number.
+    // Anything else (clove, slice, or a culinary measure with no density
+    // estimate) is a small amount with no reliable retail-pack conversion —
+    // one package covers it, so cartQty stays at 1.
 
     const addRes = await fetch("https://api.kroger.com/v1/cart/add", {
       method: "PUT",
