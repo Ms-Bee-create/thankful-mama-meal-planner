@@ -423,7 +423,13 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   }
   if(zip) localStorage.setItem("kroger_zip", zip);
 
-  const merged = mergeIngredients(chosen);
+  // Respect anything unchecked on the combined list itself, not just what's
+  // marked "already have" per recipe.
+  const merged = currentMergedList().filter(m => !excludedFromList.has(m.term.toLowerCase()));
+  if(!merged.length){
+    statusEl.textContent = "Nothing left on your list to send.";
+    return;
+  }
   // Unit-based totals (lb, oz, cup, can…) are sent as-is — that maps
   // reasonably to "buy this many packages." Unit-less counts like "14
   // eggs" get flagged with isCount so the server can check the matched
@@ -569,25 +575,55 @@ function renderAll(){
 
 document.getElementById("clearBtn").addEventListener("click", () => { picked.clear(); renderAll(); savePlan(); });
 
-document.getElementById("listBtn").addEventListener("click", () => {
+// Items the user's unchecked on the combined list itself — separate from
+// haveItems (which is per-recipe, "I own this before shopping"). This is
+// "I don't want this on my list at all this week," decided at the final
+// combined-list step instead of hunting through each recipe card.
+const excludedFromList = new Set();
+
+function currentMergedList(){
   const chosen = RECIPES.filter(r => picked.has(r.id));
+  return mergeIngredients(chosen);
+}
+
+function renderShopList(){
   const shopList = document.getElementById("shopList");
   shopList.innerHTML = "";
-  const merged = mergeIngredients(chosen);
+  const merged = currentMergedList();
   const group = document.createElement("div");
   group.className = "shop-group";
-  const itemsHtml = merged.map(m => {
-    // Unit-based amounts (lb, oz, cup…) are a real combined total. Unit-less
-    // counts ("2 eggs") just mean "needed 2 total" — we don't know if that's
-    // covered by one pack or several, so it's labeled as a need, not a buy-qty.
+  group.innerHTML = `<h4>Combined list (${merged.length} items) — uncheck anything you don't need</h4>`;
+
+  if(!merged.length){
+    group.innerHTML += "<div style='font-size:13px;'>Nothing left to buy — you've checked off everything!</div>";
+  }
+
+  merged.forEach(m => {
+    const key = m.term.toLowerCase();
+    const excluded = excludedFromList.has(key);
     const qtyLabel = m.unit
       ? `${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}`
       : (m.qty > 1 ? `need ${m.qty}` : "");
     const fromLabel = m.recipeTitles.size > 1 ? ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>` : "";
-    return `<div class="shop-item"><span class="box"></span>${qtyLabel ? `<strong>${escapeHtml(qtyLabel)}</strong> ` : ""}${escapeHtml(m.term)}${fromLabel}</div>`;
-  }).join("");
-  group.innerHTML = `<h4>Combined list (${merged.length} items)</h4>${itemsHtml || "<div style='font-size:13px;'>Nothing left to buy — you've checked off everything!</div>"}`;
+
+    const row = document.createElement("div");
+    row.className = "shop-item";
+    row.style.cursor = "pointer";
+    row.innerHTML = `<span class="box${excluded ? "" : " checked"}">${excluded ? "" : "✓"}</span>` +
+      `<span style="${excluded ? "text-decoration:line-through;opacity:.5;" : ""}">${qtyLabel ? `<strong>${escapeHtml(qtyLabel)}</strong> ` : ""}${escapeHtml(m.term)}${fromLabel}</span>`;
+    row.addEventListener("click", () => {
+      if(excluded) excludedFromList.delete(key); else excludedFromList.add(key);
+      renderShopList();
+    });
+    group.appendChild(row);
+  });
+
   shopList.appendChild(group);
+}
+
+document.getElementById("listBtn").addEventListener("click", () => {
+  renderShopList();
+  const chosen = RECIPES.filter(r => picked.has(r.id));
 
   const linkList = document.getElementById("linkList");
   linkList.innerHTML = "";
