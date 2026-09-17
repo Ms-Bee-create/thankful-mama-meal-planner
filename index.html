@@ -601,6 +601,17 @@ const WALMART_ITEM_IDS = {
   "spaghetti": "10534115",             // Great Value Spaghetti, 16 oz
   "russet potatoes": "10447837",       // Fresh Whole Russet Potatoes, 5 lb Bag
   "potatoes": "10447837",
+  "bacon": "1526212837",               // Great Value Sliced Hickory Smoked Original Bacon, 16 oz
+  "pork chops": "51259128",            // Pork Center Cut Loin Chops, Bone-In, 4 count Tray
+  "shrimp": "791288879",               // Great Value Frozen Raw Large Peeled and Deveined Shrimp Value Bag
+  "ground turkey": "167794433",        // JENNIE-O Fresh Lean Ground Turkey, 93% Lean/7% Fat, 1 lb
+  "chicken thighs": "778091348",       // Freshness Guaranteed Boneless Skinless Chicken Thighs Tray
+  "black beans": "10534038",           // Great Value Black Beans, 15 oz Can
+  "corn": "589659824",                 // Great Value No Salt Added Whole Kernel Corn, 15.25 oz
+  "ro-tel": "10308581",                // ROTEL Original Diced Tomatoes and Green Chilies, 10 oz
+  "flour tortillas": "953466267",      // Great Value Medium Soft Taco Flour Tortillas, 10 Count
+  "tortillas": "953466267",
+  "taco seasoning": "379517847",       // Great Value Taco Seasoning Mix, Original, 1 oz
 };
 
 // NOTE: Walmart's much-discussed "/co/ID1,ID2,..." multi-item bundle page
@@ -756,6 +767,13 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
     (multiPack.length ? "<br>" + multiPack.map(r => `${r.qty}× ${r.matched}`).join(", ") + " — added extra packs to cover the total you needed." : "") +
     (outOfStock.length ? "<br>Not available at your store right now: " + outOfStock.map(r => escapeHtml(r.matched || r.term)).join(", ") : "") +
     (noMatch.length ? "<br>Too generic to match — add these by hand: " + noMatch.map(r => escapeHtml(r.term)).join(", ") : "");
+
+  // Anything actually added to a real cart through the app counts as
+  // "purchased" for pantry-memory purposes — this is what should be
+  // driving the "you might already have these" default, not just category
+  // membership. A staple you've never actually bought through here stays
+  // on the main list until there's real evidence you have it.
+  data.results.filter(r => r.added).forEach(r => markPantryHave(r.term.toLowerCase()));
 });
 
 async function savePlan(){
@@ -979,11 +997,16 @@ function renderShopList(){
 
   merged.forEach(m => {
     const key = m.term.toLowerCase();
-    // First time seeing an item this session: pantry-marked items exclude
-    // by default (you said you already have it); staples default off too,
-    // Walmart-list style, since one bottle of oil outlasts several weeks
-    // of meal plans. Only once, so a manual toggle back on sticks after.
-    if((pantryStillGood(key) || isStaple(m.term)) && !pantrySeeded.has(key)){
+    // First time seeing an item this session: default it off only when
+    // there's real evidence you have it — either you told us directly
+    // ("Already have this") or the app itself actually bought it for you
+    // recently (a successful Kroger add, or a clicked Walmart item link).
+    // Being in the staple category alone (isStaple) only decides which
+    // *section* an item shows in below, not whether it starts checked —
+    // a staple you've never actually gotten through the app has no reason
+    // to be assumed already in your kitchen. Only once per session, so a
+    // manual toggle back on sticks after.
+    if(pantryStillGood(key) && !pantrySeeded.has(key)){
       excludedFromList.add(key);
       pantrySeeded.add(key);
     }
@@ -1046,6 +1069,11 @@ function updateWalmartItemLinks(){
       a.rel = "noopener";
       a.textContent = term;
       a.style.cssText = "display:inline-block;background:var(--cart);color:#fff;font-size:12px;font-weight:700;padding:7px 12px;border-radius:6px;text-decoration:none;";
+      // Clicking through to actually buy something is the closest signal
+      // we have to a real purchase for a Walmart item (we can't confirm
+      // checkout the way Kroger's API confirms a cart add) — good enough
+      // to count toward "you've gotten this recently" pantry memory.
+      a.addEventListener("click", () => markPantryHave(term.toLowerCase()));
       container.appendChild(a);
     });
     row.style.display = "block";
