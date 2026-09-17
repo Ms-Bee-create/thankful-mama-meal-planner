@@ -344,6 +344,11 @@ const PREP_ONLY_WORDS = new Set([
   "shredded","peeled","deveined","drained","halved","grated","cut","divided",
   "optional","to taste","for garnish","garnish"
 ]);
+// Whole-part prep/serving instructions that slip through as their own
+// comma-split "ingredient" (e.g. "potatoes, cut into wedges" or "cotija
+// cheese, to serve") — these describe how to prep or plate the dish, not
+// something to shop for.
+const PREP_PHRASE_RE = /^(cut (into|in)\b|to (serve|taste)\b|for (serving|garnish|topping)\b|plus more\b|for the .+)/i;
 const QTY_UNIT_RE = /^\s*(\d+\s?\/\s?\d+|\d+\.\d+|\d+)\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct|gallon|gallons|gal|quart|quarts|qt|pint|pints|dozen)?\.?\s+/i;
 
 function parseFraction(str){
@@ -361,6 +366,9 @@ function parseIngredientParts(ingredient){
     .split(/,| & | and /i)
     .map(raw => {
       let part = raw.replace(/\([^)]*\)/g, "").trim();
+      // Strip a trailing serving instruction glued onto the last item
+      // without its own comma, e.g. "sour cream to serve" -> "sour cream".
+      part = part.replace(/\s+(to serve|for serving|to taste|for garnish|for topping)$/i, "").trim();
       let qty = 1, unit = null;
       const m = part.match(QTY_UNIT_RE);
       if(m){
@@ -376,7 +384,7 @@ function parseIngredientParts(ingredient){
       if(part.trim().toLowerCase() === "pepper") part = "black pepper";
       return { term: part, qty, unit };
     })
-    .filter(p => p.term && !PREP_ONLY_WORDS.has(p.term.toLowerCase()));
+    .filter(p => p.term && !PREP_ONLY_WORDS.has(p.term.toLowerCase()) && !PREP_PHRASE_RE.test(p.term));
 }
 
 // Combines parsed parts across every selected recipe: same item name +
