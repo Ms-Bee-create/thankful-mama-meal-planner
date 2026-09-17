@@ -52,10 +52,12 @@
   .steps{flex:1.4;min-width:240px;}
   h3.label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--terracotta-dark);border-bottom:1px dotted var(--terracotta);padding-bottom:3px;margin:0 0 8px;}
   ul.ing-list{list-style:none;margin:0;padding:0;}
-  ul.ing-list li{display:flex;gap:7px;font-size:13px;padding:3px 0;align-items:flex-start;}
-  .box{flex:none;width:10px;height:10px;border:1.3px solid var(--terracotta);margin-top:3px;border-radius:1px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
-  .box.checked{background:var(--terracotta);}
-  ul.ing-list li{cursor:pointer;}
+  ul.ing-list li{display:flex;gap:9px;font-size:13px;padding:6px 4px;align-items:center;}
+  .box{flex:none;width:10px;height:10px;border:1.3px solid var(--terracotta);margin-top:3px;border-radius:1px;}
+  ul.ing-list .box{width:18px;height:18px;margin-top:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;border-radius:4px;}
+  ul.ing-list .box.checked{background:var(--terracotta);}
+  ul.ing-list li{cursor:pointer;-webkit-tap-highlight-color:transparent;border-radius:6px;}
+  ul.ing-list li:active{background:var(--cream-2);}
   ol.steps-list{margin:0;padding-left:18px;font-size:13px;}
   ol.steps-list li{padding:2.5px 0;}
   .note{font-size:11px;color:var(--terracotta-dark);font-style:italic;margin-top:8px;}
@@ -119,6 +121,7 @@
       <div id="krogerConnected" style="display:none;">
         <label style="display:block;margin-bottom:8px;">Zip code for your store: <input id="krogerZip" type="text" maxlength="10" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:1px solid var(--terracotta);width:100px;"></label>
         <button id="krogerSyncBtn" type="button" style="background:var(--sage);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Karla',sans-serif;">Send list to my Kroger cart</button>
+        <p style="font-size:11px;opacity:.7;margin:8px 0 0;">For weighed ingredients (lb, oz, cups…) we send the real combined amount. For counted items like eggs or buns, we only ever add 1 pack — double-check the pack size covers what you need before checking out.</p>
         <div id="krogerSyncStatus" style="margin-top:10px;"></div>
       </div>
     </div>
@@ -139,7 +142,7 @@ const RECIPES = [
 {protein:"beef",title:"American Goulash (\"Villager Stew\")",meta:"STOVETOP / DUTCH OVEN · Cook 40 min",cartUrl:"https://www.walmart.com/i/recipes/American-goulash/839106",
  ingredients:["2 lb ground beef","1 yellow onion, diced","3 cloves garlic, minced","2 cans Italian diced tomatoes","2 cans tomato sauce","3 cups water","Worcestershire sauce, Italian seasoning, salt","1 box elbow macaroni"],
  steps:["Brown beef in a Dutch oven. Drain grease.","Add onion + garlic, cook 3 min.","Add tomatoes, sauce, water, Worcestershire, seasoning, salt, macaroni. Boil.","Reduce to medium-low, cover, simmer 25–30 min until pasta is cooked.","Serve immediately."],
- note:"Named \"Villager Stew\" for the family's Minecraft-loving son. Genuinely stovetop, not crockpot, as written."},
+ note:"Named \"Villager Stew\" for the family's Minecraft-loving son."},
 {protein:"beef",title:"Cowboy Stew",meta:"CROCKPOT · Brown 20 min + Slow Cook 6–8 hrs (low)",source:"Amanda's recipe (keytomylime.com)",
  ingredients:["8 slices bacon, cut 1/4\"","1 (12 oz) pack kielbasa, sliced & halved","1 yellow onion, diced","2 lb lean ground beef","3 cloves garlic, minced","Chili powder, cumin, parsley, salt, pepper","1/4 cup flour","1 (14.5oz) can diced tomatoes","1 (10oz) can mild Ro-Tel","1 (16oz) can pork & beans","1 (8.75oz) can corn, drained","1.5 lb russet potatoes, cubed","1 cup beef broth","Green onions, garnish"],
  steps:["Cook bacon in a skillet until crispy (8–10 min). Transfer to crockpot.","Cook kielbasa & onion in drippings ~7 min. Transfer to crockpot.","Cook ground beef until no pink (~7 min). Drain grease.","Add garlic + seasonings to beef, cook 1 min, sprinkle flour, mix. Transfer to crockpot.","Add tomatoes, Ro-Tel, pork & beans, potatoes, corn, broth. Stir.","Cover, cook LOW 6–8 hrs or HIGH 3–4 hrs until potatoes are tender.","Serve topped with green onions."]},
@@ -421,7 +424,13 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   if(zip) localStorage.setItem("kroger_zip", zip);
 
   const merged = mergeIngredients(chosen);
-  const items = merged.map(m => ({ term: m.term, qty: Math.max(1, Math.round(m.qty)) }));
+  // Only trust the summed number for items with a real weight/volume/pack
+  // unit (lb, oz, cup, can…) — that maps reasonably to "buy this many
+  // packages." For unit-less counts like "2 eggs," we can't tell if the
+  // matched product is sold individually or in a dozen carton, so ordering
+  // quantity 2 could mean 2 whole cartons. Capping those at 1 avoids
+  // over-buying; a single pack almost always covers what a recipe needs.
+  const items = merged.map(m => ({ term: m.term, qty: m.unit ? Math.max(1, Math.round(m.qty)) : 1 }));
   statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
 
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -563,7 +572,12 @@ document.getElementById("listBtn").addEventListener("click", () => {
   const group = document.createElement("div");
   group.className = "shop-group";
   const itemsHtml = merged.map(m => {
-    const qtyLabel = m.unit ? `${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}` : (m.qty > 1 ? `×${m.qty}` : "");
+    // Unit-based amounts (lb, oz, cup…) are a real combined total. Unit-less
+    // counts ("2 eggs") just mean "needed 2 total" — we don't know if that's
+    // covered by one pack or several, so it's labeled as a need, not a buy-qty.
+    const qtyLabel = m.unit
+      ? `${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}`
+      : (m.qty > 1 ? `need ${m.qty}` : "");
     const fromLabel = m.recipeTitles.size > 1 ? ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>` : "";
     return `<div class="shop-item"><span class="box"></span>${qtyLabel ? `<strong>${escapeHtml(qtyLabel)}</strong> ` : ""}${escapeHtml(m.term)}${fromLabel}</div>`;
   }).join("");
