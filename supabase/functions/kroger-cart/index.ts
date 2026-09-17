@@ -175,10 +175,23 @@ Deno.serve(async (req) => {
       continue;
     }
     const searchData = await searchRes.json();
-    const candidates = (searchData.data || []).filter((p: any) => p.items?.[0]?.price?.regular != null);
+    let candidates = (searchData.data || []).filter((p: any) => p.items?.[0]?.price?.regular != null);
     if (!candidates.length) {
       results.push({ term, matched: null, added: false, qty, reason: "no_match" });
       continue;
+    }
+
+    // Kroger's search is a loose keyword match, not an exact phrase match —
+    // "baby potatoes" can pull back baby food alongside actual potatoes,
+    // because "baby" alone is a strong hit in their baby-products catalog.
+    // Sorting by cheapest price then picks whatever's cheapest of the whole
+    // pile, unrelated products included. Require the core noun (the last
+    // word of the search term, roughly the actual food item) to show up in
+    // the product's own description before it's eligible at all.
+    const coreNoun = term.trim().split(/\s+/).pop()!.toLowerCase().replace(/s$/, "");
+    if (coreNoun.length > 2) {
+      const relevant = candidates.filter((p: any) => p.description.toLowerCase().includes(coreNoun));
+      if (relevant.length) candidates = relevant;
     }
 
     const nonOrganic = candidates.filter((p: any) => !/organic/i.test(p.description));
