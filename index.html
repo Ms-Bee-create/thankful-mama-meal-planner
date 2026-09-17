@@ -546,9 +546,33 @@ const IMPACT_SOURCE_ID = "imp_00000000";
 // to be curated by hand — find the item on walmart.com, the numeric id is
 // in its URL (.../ip/.../<ITEM_ID>). Anything not in here is simply left
 // out of the bundle rather than guessed.
+// Curated by hand from walmart.com search results, preferring Great Value
+// (or the store-commodity item for fresh produce) and, where a product has
+// multiple package sizes, whichever size had the best price-per-pound/oz
+// at lookup time — not necessarily Walmart's own "Overall pick" badge.
+// This is a one-time snapshot, not a live price feed: unlike the Kroger
+// integration, there's no API call happening here to re-check pricing or
+// resize the pack to how much a given week's recipes actually need, so
+// these ids and their sizing should be treated as good-enough defaults,
+// not kept perfectly current automatically.
 const WALMART_ITEM_IDS = {
-  // "ground beef": "10450115",
-  // "yellow onion": "44390948",
+  "ground beef": "15136791",           // 80/20 Ground Beef Chuck, 1lb Roll — $6.93/lb, cheapest 1lb-tier option
+  "chicken breast": "10414680",        // Great Value Boneless Skinless Chicken Breasts, 3lb
+  "yellow onion": "51259212",          // Fresh Whole Yellow Onion, Each
+  "onion": "51259212",
+  "garlic": "44391100",                // Garlic Bulb Fresh Whole, Each
+  "green bell pepper": "44390945",     // Fresh Green Bell Pepper, Each
+  "olive oil": "10316039",             // Great Value 100% Extra Virgin Olive Oil, 25.5 fl oz
+  "butter": "26954459",                // Great Value Sweet Cream Unsalted Butter, 16 oz
+  "egg": "421705528",                  // Great Value Cage-Free Large White Eggs, 12 Count
+  "whole milk": "10450114",            // Great Value Whole Vitamin D Milk, Gallon
+  "cheddar cheese": "10452370",        // Great Value Mild Cheddar Finely Shredded Cheese, 8 oz
+  "italian bread crumbs": "10315088",  // Great Value Italian Style Bread Crumbs, 15 oz
+  "salt": "10448316",                  // Great Value Iodized Salt, 26 oz
+  "black pepper": "44662573",          // Great Value Ground Black Pepper, 3 oz
+  "diced tomatoes": "10450990",        // Great Value Diced Tomatoes in Tomato Juice, 14.5 oz Can
+  "tomato sauce": "10415487",          // Great Value Tomato Sauce, 8 oz Can
+  "chicken broth": "10899013",         // Great Value Chicken Broth, 32 oz Carton
 };
 
 function buildWalmartBundleUrl(itemIds){
