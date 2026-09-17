@@ -91,6 +91,7 @@
 <div class="plan-bar">
   <div class="count" id="pickCount">0 recipes picked</div>
   <div style="display:flex;gap:10px;">
+    <button class="clear" id="addRecipeBtn" type="button">+ Add your own recipe</button>
     <button class="clear" id="clearBtn" type="button">Clear</button>
     <button id="listBtn" type="button" disabled>Build my shopping list</button>
   </div>
@@ -124,6 +125,38 @@
         <div id="krogerSyncStatus" style="margin-top:10px;"></div>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="overlay" id="addRecipeOverlay">
+  <div class="list-modal">
+    <button class="close" id="closeAddRecipe" type="button">&times;</button>
+    <h2>Add your own recipe</h2>
+    <p style="font-size:13px;opacity:.75;margin-top:-8px;">Paste a recipe below and we'll try to split it into ingredients and steps for you to check over — or just fill in the fields yourself.</p>
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Paste a recipe (optional)</label>
+    <textarea id="pasteBox" rows="6" placeholder="Paste a whole recipe here — title, ingredients, instructions, however it's formatted." style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></textarea>
+    <button id="parseRecipeBtn" type="button" style="margin-top:8px;background:var(--sage);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;">Split into fields below</button>
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:18px 0 4px;">Category</label>
+    <select id="newRecipeProtein" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></select>
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Title</label>
+    <input id="newRecipeTitle" type="text" placeholder="e.g. Grandma's Chicken and Dumplings" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;">
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Notes (optional — prep/cook time, method)</label>
+    <input id="newRecipeMeta" type="text" placeholder="e.g. STOVETOP · Prep 15 min · Cook 30 min" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;">
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Ingredients (one per line)</label>
+    <textarea id="newRecipeIngredients" rows="6" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></textarea>
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Instructions (one step per line)</label>
+    <textarea id="newRecipeSteps" rows="6" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></textarea>
+
+    <div style="margin-top:16px;display:flex;gap:10px;">
+      <button id="saveRecipeBtn" type="button" style="background:var(--terracotta);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;">Save recipe</button>
+    </div>
+    <div id="addRecipeStatus" style="margin-top:10px;font-size:12px;color:var(--terracotta-dark);"></div>
   </div>
 </div>
 
@@ -292,6 +325,27 @@ let activeFilter = "all";
 const picked = new Set();
 const haveItems = new Set(); // ingredients the user already has on hand — session only, not persisted
 
+// Pantry staples (mostly spices) marked "already have this" — persists
+// across weeks, unlike haveItems/excludedFromList which reset on reload.
+// Map of item_key (lowercased term) -> ISO timestamp it was marked.
+const pantryHave = new Map();
+const PANTRY_SKIP_WEEKS = 5;
+function pantryStillGood(key){
+  const markedAt = pantryHave.get(key);
+  if(!markedAt) return false;
+  const ageMs = Date.now() - new Date(markedAt).getTime();
+  return ageMs < PANTRY_SKIP_WEEKS * 7 * 24 * 60 * 60 * 1000;
+}
+async function markPantryHave(key){
+  const now = new Date().toISOString();
+  pantryHave.set(key, now);
+  if(userId) await supabaseClient.from("pantry_have").upsert({ user_id: userId, item_key: key, marked_at: now });
+}
+async function clearPantryHave(key){
+  pantryHave.delete(key);
+  if(userId) await supabaseClient.from("pantry_have").delete().eq("user_id", userId).eq("item_key", key);
+}
+
 async function initUser(){
   const { data: { session } } = await supabaseClient.auth.getSession();
   if(session){
@@ -304,8 +358,30 @@ async function initUser(){
     const { data: plan } = await supabaseClient.from("weekly_plans").select("recipe_ids").eq("user_id", userId).maybeSingle();
     if(plan && Array.isArray(plan.recipe_ids)){
       plan.recipe_ids.forEach(id => picked.add(id));
-      renderAll();
     }
+
+    const { data: customRows } = await supabaseClient.from("custom_recipes").select("*").eq("user_id", userId);
+    if(customRows){
+      customRows.forEach(row => {
+        RECIPES.push({
+          id: row.id,
+          protein: row.protein,
+          title: row.title,
+          meta: row.meta || "Your recipe",
+          source: "Your recipe",
+          ingredients: row.ingredients || [],
+          steps: row.steps || [],
+          isCustom: true
+        });
+      });
+    }
+
+    const { data: pantryRows } = await supabaseClient.from("pantry_have").select("item_key, marked_at").eq("user_id", userId);
+    if(pantryRows){
+      pantryRows.forEach(row => pantryHave.set(row.item_key, row.marked_at));
+    }
+
+    renderAll();
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -583,8 +659,16 @@ function buildCard(r){
   top.className = "card-top";
   const actionHtml = r.cartUrl
     ? `<a class="cart-btn" href="${r.cartUrl}" target="_blank" rel="noopener">Add to Walmart cart →</a>`
-    : `<span class="source-badge">${escapeHtml(r.source)}</span>`;
-  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div>${actionHtml}`;
+    : `<span class="source-badge">${escapeHtml(r.source || "")}</span>`;
+  const deleteHtml = r.isCustom
+    ? `<button class="delete-recipe" type="button" title="Remove this recipe" style="background:none;border:none;color:var(--terracotta-dark);font-size:16px;cursor:pointer;padding:0 0 0 8px;">🗑</button>`
+    : "";
+  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div><div style="display:flex;align-items:center;">${actionHtml}${deleteHtml}</div>`;
+  if(r.isCustom){
+    top.querySelector(".delete-recipe").addEventListener("click", () => {
+      if(confirm(`Remove "${r.title}" from your recipes?`)) deleteCustomRecipe(r.id);
+    });
+  }
 
   pickRow.appendChild(box);
   pickRow.appendChild(top);
@@ -638,6 +722,9 @@ document.getElementById("clearBtn").addEventListener("click", () => { picked.cle
 // "I don't want this on my list at all this week," decided at the final
 // combined-list step instead of hunting through each recipe card.
 const excludedFromList = new Set();
+// Pantry items already auto-excluded this session, so re-rendering the
+// list doesn't keep fighting a manual "need it again" toggle.
+const pantrySeeded = new Set();
 
 function currentMergedList(){
   const chosen = RECIPES.filter(r => picked.has(r.id));
@@ -658,6 +745,13 @@ function renderShopList(){
 
   merged.forEach(m => {
     const key = m.term.toLowerCase();
+    // The first time we see a pantry-stocked item this session, exclude it
+    // by default (you said you already have it) — but only once, so
+    // toggling it back on manually sticks for the rest of the session.
+    if(pantryStillGood(key) && !pantrySeeded.has(key)){
+      excludedFromList.add(key);
+      pantrySeeded.add(key);
+    }
     const excluded = excludedFromList.has(key);
     const fromLabel = ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>`;
     // "tsp" is our internal normalized marker for anything measured in
@@ -676,15 +770,37 @@ function renderShopList(){
         ? `${escapeHtml(m.term)} <strong>— need ${display.qty}</strong>`
         : escapeHtml(m.term));
 
+    const stocked = pantryStillGood(key);
+    const pantryLink = document.createElement("a");
+    pantryLink.href = "javascript:void(0)";
+    pantryLink.style.cssText = "font-size:11px;opacity:.65;text-decoration:underline;white-space:nowrap;margin-left:auto;padding-left:8px;";
+    pantryLink.textContent = stocked ? "Need it again?" : `Already have this — skip ${PANTRY_SKIP_WEEKS}wk`;
+
     const row = document.createElement("div");
     row.className = "shop-item";
-    row.style.cursor = "pointer";
-    row.innerHTML = `<span class="box${excluded ? "" : " checked"}">${excluded ? "" : "✓"}</span>` +
-      `<span style="${excluded ? "text-decoration:line-through;opacity:.5;" : ""}">${itemLine}${fromLabel}</span>`;
-    row.addEventListener("click", () => {
+    row.innerHTML = `<span class="box${excluded ? "" : " checked"}" style="cursor:pointer;">${excluded ? "" : "✓"}</span>` +
+      `<span style="cursor:pointer;flex:1;${excluded ? "text-decoration:line-through;opacity:.5;" : ""}">${itemLine}${fromLabel}</span>`;
+    row.querySelector("span.box").addEventListener("click", () => {
       if(excluded) excludedFromList.delete(key); else excludedFromList.add(key);
       renderShopList();
     });
+    row.children[1].addEventListener("click", () => {
+      if(excluded) excludedFromList.delete(key); else excludedFromList.add(key);
+      renderShopList();
+    });
+    pantryLink.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      if(stocked){
+        await clearPantryHave(key);
+        excludedFromList.delete(key);
+        pantrySeeded.delete(key);
+      } else {
+        await markPantryHave(key);
+        excludedFromList.add(key);
+      }
+      renderShopList();
+    });
+    row.appendChild(pantryLink);
     group.appendChild(row);
   });
 
@@ -717,6 +833,112 @@ document.getElementById("closeOverlay").addEventListener("click", () => {
 document.getElementById("overlay").addEventListener("click", (e) => {
   if(e.target.id === "overlay") document.getElementById("overlay").classList.remove("open");
 });
+
+// --- Add-your-own-recipe ---
+
+Object.keys(PROTEIN_LABELS).forEach(p => {
+  const opt = document.createElement("option");
+  opt.value = p;
+  opt.textContent = PROTEIN_LABELS[p];
+  document.getElementById("newRecipeProtein").appendChild(opt);
+});
+
+// Best-effort split of a pasted recipe into title/ingredients/steps. Looks
+// for explicit "Ingredients"/"Instructions" headers first (most recipe
+// sites and printouts use them); without those it falls back to guessing
+// by line shape — short lines with quantities read as ingredients, longer
+// sentence-like lines read as steps. This is a heuristic, not a real
+// parser, so the fields are always shown for the user to fix before saving.
+function parsePastedRecipe(text){
+  const lines = text.split(/\r?\n+/).map(l => l.trim()).filter(Boolean);
+  const ING_HEADER = /^ingredients?:?$/i;
+  const STEP_HEADER = /^(instructions?|directions?|steps?|method):?$/i;
+  let title = "", section = null;
+  const ingredients = [], steps = [];
+  lines.forEach((line, i) => {
+    if(ING_HEADER.test(line)){ section = "ingredients"; return; }
+    if(STEP_HEADER.test(line)){ section = "steps"; return; }
+    if(i === 0 && !title && lines.length > 1 && line.length < 80 && !/^\d/.test(line) && !/[.:]$/.test(line)){
+      title = line.replace(/^[-*•]\s*/, "");
+      return;
+    }
+    const clean = line.replace(/^[-*•]\s*|^\d+[.)]\s*/, "");
+    if(section === "ingredients"){ ingredients.push(clean); return; }
+    if(section === "steps"){ steps.push(clean); return; }
+    // No header seen yet — guess: numbered or long sentence-like lines are
+    // steps, short lines (especially ones starting with a quantity) are
+    // ingredients.
+    const looksLikeStep = /^\d+[.)]\s/.test(line) || line.split(/\s+/).length > 8;
+    (looksLikeStep ? steps : ingredients).push(clean);
+  });
+  return { title, ingredients, steps };
+}
+
+document.getElementById("parseRecipeBtn").addEventListener("click", () => {
+  const text = document.getElementById("pasteBox").value.trim();
+  if(!text) return;
+  const parsed = parsePastedRecipe(text);
+  if(parsed.title && !document.getElementById("newRecipeTitle").value) document.getElementById("newRecipeTitle").value = parsed.title;
+  document.getElementById("newRecipeIngredients").value = parsed.ingredients.join("\n");
+  document.getElementById("newRecipeSteps").value = parsed.steps.join("\n");
+  document.getElementById("addRecipeStatus").textContent = "Split into the fields below — double check them before saving, this is just a best guess.";
+});
+
+document.getElementById("addRecipeBtn").addEventListener("click", () => {
+  document.getElementById("addRecipeOverlay").classList.add("open");
+});
+document.getElementById("closeAddRecipe").addEventListener("click", () => {
+  document.getElementById("addRecipeOverlay").classList.remove("open");
+});
+document.getElementById("addRecipeOverlay").addEventListener("click", (e) => {
+  if(e.target.id === "addRecipeOverlay") document.getElementById("addRecipeOverlay").classList.remove("open");
+});
+
+document.getElementById("saveRecipeBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("addRecipeStatus");
+  const title = document.getElementById("newRecipeTitle").value.trim();
+  const protein = document.getElementById("newRecipeProtein").value;
+  const meta = document.getElementById("newRecipeMeta").value.trim();
+  const ingredients = document.getElementById("newRecipeIngredients").value.split("\n").map(l => l.trim()).filter(Boolean);
+  const steps = document.getElementById("newRecipeSteps").value.split("\n").map(l => l.trim()).filter(Boolean);
+
+  if(!title || !ingredients.length){
+    statusEl.textContent = "Give it a title and at least one ingredient.";
+    return;
+  }
+  if(!userId){
+    statusEl.textContent = "Still connecting — try again in a second.";
+    return;
+  }
+
+  statusEl.textContent = "Saving…";
+  const { data, error } = await supabaseClient.from("custom_recipes").insert({
+    user_id: userId, protein, title, meta: meta || null, ingredients, steps
+  }).select().single();
+
+  if(error){
+    statusEl.textContent = "Couldn't save: " + error.message;
+    return;
+  }
+
+  RECIPES.push({
+    id: data.id, protein, title, meta: meta || "Your recipe", source: "Your recipe",
+    ingredients, steps, isCustom: true
+  });
+
+  ["pasteBox","newRecipeTitle","newRecipeMeta","newRecipeIngredients","newRecipeSteps"].forEach(id => document.getElementById(id).value = "");
+  statusEl.textContent = "Saved! Find it under " + (PROTEIN_LABELS[protein] || protein) + ".";
+  renderAll();
+});
+
+async function deleteCustomRecipe(id){
+  picked.delete(id);
+  const idx = RECIPES.findIndex(r => r.id === id);
+  if(idx !== -1) RECIPES.splice(idx, 1);
+  if(userId) await supabaseClient.from("custom_recipes").delete().eq("user_id", userId).eq("id", id);
+  renderAll();
+  savePlan();
+}
 
 renderAll();
 initUser();
