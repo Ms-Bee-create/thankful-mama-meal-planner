@@ -72,10 +72,51 @@
   .list-modal .close{position:absolute;top:16px;right:18px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--sage-dark);}
   .shop-group{margin-bottom:18px;}
   .shop-group h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 8px;}
-  .shop-item{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:3px 0;}
+  .shop-item{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:3px 0;flex-wrap:wrap;}
+  .shop-item .box{width:18px;height:18px;margin-top:0;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff;border-radius:4px;}
+  .shop-item .box.checked{background:var(--terracotta);}
   .recipe-link-row{border-top:2px dashed var(--line);margin-top:20px;padding-top:16px;}
   .recipe-link-row a{display:block;font-size:13px;color:var(--sage-dark);font-weight:700;text-decoration:none;padding:6px 0;}
   .kroger-note{background:var(--cream-2);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--terracotta-dark);margin-top:16px;}
+
+  /* Phone layout — this app will mostly get used on a phone, standing at
+     the fridge or in a store aisle, so the tight desktop paddings/font
+     sizes get roomier tap targets and less wasted horizontal space here. */
+  @media (max-width: 640px){
+    .wrap{padding:0 16px 40px;}
+    header{padding:24px 0 18px;}
+    h1{font-size:26px;}
+    .eyebrow{font-size:10px;}
+    .subhead{font-size:13px;}
+
+    .plan-bar{margin:0 -16px 22px;padding:10px 14px;gap:8px;}
+    .plan-bar{flex-direction:column;align-items:stretch;}
+    .plan-bar .count{text-align:center;}
+    .plan-bar > div{display:flex;flex-direction:column;gap:8px;width:100%;}
+    .plan-bar button{width:100%;padding:12px 14px;font-size:14px;}
+
+    .filters{gap:6px;margin-bottom:20px;}
+    .filter-chip{padding:8px 12px;font-size:13px;}
+
+    .section-head{padding:10px 14px;}
+    .section-head h2{font-size:19px;}
+
+    .recipe-card{padding:14px 14px;margin-bottom:16px;}
+    .pick-box{width:30px;height:30px;}
+    .card-title{font-size:17px;}
+    .card-body{gap:16px;}
+    .ingredients, .steps{min-width:100%;}
+    ul.ing-list li{padding:9px 4px;font-size:14px;}
+    ul.ing-list .box{width:22px;height:22px;}
+    ol.steps-list{font-size:14px;padding-left:20px;}
+
+    .overlay{padding:0;align-items:stretch;}
+    .list-modal{max-width:none;width:100%;min-height:100%;border-radius:0;padding:20px 16px 30px;}
+    .shop-item{font-size:15px;padding:8px 0;}
+    .shop-item .box{width:24px;height:24px;}
+    .shop-item a{margin-left:0 !important;width:100%;padding-left:0 !important;padding-top:2px;}
+    .kroger-note{padding:14px;}
+  }
 </style>
 </head>
 <body>
