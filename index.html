@@ -121,7 +121,7 @@
       <div id="krogerConnected" style="display:none;">
         <label style="display:block;margin-bottom:8px;">Zip code for your store: <input id="krogerZip" type="text" maxlength="10" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:1px solid var(--terracotta);width:100px;"></label>
         <button id="krogerSyncBtn" type="button" style="background:var(--sage);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Karla',sans-serif;">Send list to my Kroger cart</button>
-        <p style="font-size:11px;opacity:.7;margin:8px 0 0;">For weighed ingredients (lb, oz, cups…) we send the real combined amount. For counted items like eggs or buns, we only ever add 1 pack — double-check the pack size covers what you need before checking out.</p>
+        <p style="font-size:11px;opacity:.7;margin:8px 0 0;">We combine amounts across every recipe you picked — for counted items like eggs or buns, we check the actual pack size (like "1 dozen") and add enough packs to cover the total. Still worth a quick glance at your cart before checking out.</p>
         <div id="krogerSyncStatus" style="margin-top:10px;"></div>
       </div>
     </div>
@@ -424,13 +424,16 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   if(zip) localStorage.setItem("kroger_zip", zip);
 
   const merged = mergeIngredients(chosen);
-  // Only trust the summed number for items with a real weight/volume/pack
-  // unit (lb, oz, cup, can…) — that maps reasonably to "buy this many
-  // packages." For unit-less counts like "2 eggs," we can't tell if the
-  // matched product is sold individually or in a dozen carton, so ordering
-  // quantity 2 could mean 2 whole cartons. Capping those at 1 avoids
-  // over-buying; a single pack almost always covers what a recipe needs.
-  const items = merged.map(m => ({ term: m.term, qty: m.unit ? Math.max(1, Math.round(m.qty)) : 1 }));
+  // Unit-based totals (lb, oz, cup, can…) are sent as-is — that maps
+  // reasonably to "buy this many packages." Unit-less counts like "14
+  // eggs" get flagged with isCount so the server can check the matched
+  // product's actual pack size (e.g. "1 dozen") and work out how many
+  // packs really covers the total, instead of guessing.
+  const items = merged.map(m => ({
+    term: m.term,
+    qty: Math.max(1, Math.round(m.qty)),
+    isCount: !m.unit
+  }));
   statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
 
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -448,7 +451,9 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
     return;
   }
   const addedCount = data.results.filter(r => r.added).length;
+  const multiPack = data.results.filter(r => r.added && r.qty > 1);
   statusEl.innerHTML = `Added ${addedCount} of ${data.results.length} items to your Kroger cart.` +
+    (multiPack.length ? "<br>" + multiPack.map(r => `${r.qty}× ${r.matched}`).join(", ") + " — added extra packs to cover the total you needed." : "") +
     (addedCount < data.results.length ? "<br>Some ingredients were too generic to match — you may need to add a couple by hand." : "");
 });
 

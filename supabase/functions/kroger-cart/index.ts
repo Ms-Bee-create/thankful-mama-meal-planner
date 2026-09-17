@@ -118,14 +118,29 @@ Deno.serve(async (req) => {
     await supabase.from("kroger_connections").update({ kroger_location_id: locationId }).eq("user_id", userId);
   }
 
-  const results: { term: string; matched: string | null; added: boolean; qty: number }[] = [];
+  const results: { term: string; matched: string | null; added: boolean; qty: number; packInfo?: string }[] = [];
 
-  // Normalize items: accept either plain strings (old shape) or {term, qty}.
-  const normalizedItems: { term: string; qty: number }[] = items.map((it: unknown) =>
-    typeof it === "string" ? { term: it, qty: 1 } : { term: (it as any).term, qty: (it as any).qty || 1 }
+  // Normalize items: accept either plain strings (old shape) or {term, qty, isCount}.
+  const normalizedItems: { term: string; qty: number; isCount: boolean }[] = items.map((it: unknown) =>
+    typeof it === "string"
+      ? { term: it, qty: 1, isCount: false }
+      : { term: (it as any).term, qty: (it as any).qty || 1, isCount: !!(it as any).isCount }
   );
 
-  for (const { term, qty } of normalizedItems) {
+  // "2 dozen", "18 ct", "12 count" etc. -> how many individual units are in
+  // one pack, so we can work out how many packs to actually add to cart.
+  function packUnitsFromSize(size: string | undefined): number | null {
+    if (!size) return null;
+    const s = size.toLowerCase();
+    const dozenMatch = s.match(/(\d+(\.\d+)?)\s*dozen/);
+    if (dozenMatch) return parseFloat(dozenMatch[1]) * 12;
+    if (s.includes("dozen")) return 12;
+    const ctMatch = s.match(/(\d+(\.\d+)?)\s*(ct|count|each|ea)\b/);
+    if (ctMatch) return parseFloat(ctMatch[1]);
+    return null;
+  }
+
+  for (const { term, qty, isCount } of normalizedItems) {
     // Pull a handful of candidates rather than just the top hit, so we can
     // pick the cheapest one instead of whatever Kroger's default ranking
     // (often a pricier private-label organic item) happens to put first.
@@ -148,6 +163,17 @@ Deno.serve(async (req) => {
     const pool = nonOrganic.length ? nonOrganic : candidates;
     pool.sort((a: any, b: any) => a.items[0].price.regular - b.items[0].price.regular);
     const product = pool[0];
+    const packSize: string | undefined = product.items?.[0]?.size;
+
+    // For counted items (eggs, buns…) figure out how many packs actually
+    // cover the total needed — e.g. 14 eggs against a "1 dozen" carton
+    // means 2 cartons, not 1. If the pack size can't be parsed, fall back
+    // to 1 pack rather than guessing.
+    let cartQty = qty;
+    if (isCount) {
+      const unitsPerPack = packUnitsFromSize(packSize);
+      cartQty = unitsPerPack ? Math.ceil(qty / unitsPerPack) : 1;
+    }
 
     const addRes = await fetch("https://api.kroger.com/v1/cart/add", {
       method: "PUT",
@@ -155,10 +181,10 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ items: [{ upc: product.productId, quantity: qty }] }),
+      body: JSON.stringify({ items: [{ upc: product.productId, quantity: cartQty }] }),
     });
 
-    results.push({ term, matched: product.description, added: addRes.ok, qty });
+    results.push({ term, matched: product.description, added: addRes.ok, qty: cartQty, packInfo: packSize });
   }
 
   return json({ results, storeLocationId: locationId });
