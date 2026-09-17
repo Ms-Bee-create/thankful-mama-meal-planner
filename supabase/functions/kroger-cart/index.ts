@@ -1,0 +1,127 @@
+// Given a list of ingredient search terms, finds matching Kroger products
+// near the user's chosen store and adds them to the user's real Kroger cart.
+//
+// POST { items: string[], zip?: string }
+// Requires the user's Supabase JWT in the Authorization header.
+
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+
+const KROGER_CLIENT_ID = Deno.env.get("KROGER_CLIENT_ID")!;
+const KROGER_CLIENT_SECRET = Deno.env.get("KROGER_CLIENT_SECRET")!;
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { ...CORS_HEADERS, "Content-Type": "application/json" },
+  });
+}
+
+async function refreshAccessToken(refreshToken: string) {
+  const basicAuth = btoa(`${KROGER_CLIENT_ID}:${KROGER_CLIENT_SECRET}`);
+  const res = await fetch("https://api.kroger.com/v1/connect/oauth2/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Basic ${basicAuth}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+    }),
+  });
+  if (!res.ok) throw new Error("Failed to refresh Kroger token: " + (await res.text()));
+  return res.json();
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
+  if (req.method !== "POST") return json({ error: "Not found" }, 404);
+
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) return json({ error: "Not signed in" }, 401);
+
+  const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+  const { data: userData, error: userErr } = await supabase.auth.getUser(authHeader.replace("Bearer ", ""));
+  if (userErr || !userData.user) return json({ error: "Invalid session" }, 401);
+  const userId = userData.user.id;
+
+  const { items, zip } = await req.json();
+  if (!Array.isArray(items) || !items.length) return json({ error: "No items provided" }, 400);
+
+  const { data: connection, error: connErr } = await supabase
+    .from("kroger_connections")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (connErr || !connection) return json({ error: "Kroger account not connected" }, 400);
+
+  let accessToken = connection.access_token;
+  let locationId = connection.kroger_location_id;
+
+  // Refresh the token if it's expired or about to be.
+  if (new Date(connection.expires_at).getTime() < Date.now() + 60_000) {
+    const refreshed = await refreshAccessToken(connection.refresh_token);
+    accessToken = refreshed.access_token;
+    const expiresAt = new Date(Date.now() + refreshed.expires_in * 1000).toISOString();
+    await supabase.from("kroger_connections").update({
+      access_token: refreshed.access_token,
+      refresh_token: refreshed.refresh_token ?? connection.refresh_token,
+      expires_at: expiresAt,
+    }).eq("user_id", userId);
+  }
+
+  // Find the nearest store if we don't have one saved yet.
+  if (!locationId) {
+    if (!zip) return json({ error: "No store selected yet — need a zip code first" }, 400);
+    const locRes = await fetch(
+      `https://api.kroger.com/v1/locations?filter.zipCode.near=${encodeURIComponent(zip)}&filter.radiusInMiles=15&filter.limit=1`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!locRes.ok) return json({ error: "Couldn't find a nearby Kroger store", detail: await locRes.text() }, 502);
+    const locData = await locRes.json();
+    locationId = locData.data?.[0]?.locationId;
+    if (!locationId) return json({ error: "No Kroger store found near that zip code" }, 404);
+    await supabase.from("kroger_connections").update({ kroger_location_id: locationId }).eq("user_id", userId);
+  }
+
+  const results: { term: string; matched: string | null; added: boolean }[] = [];
+
+  for (const term of items) {
+    const searchRes = await fetch(
+      `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(term)}&filter.locationId=${locationId}&filter.limit=1`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!searchRes.ok) {
+      results.push({ term, matched: null, added: false });
+      continue;
+    }
+    const searchData = await searchRes.json();
+    const product = searchData.data?.[0];
+    if (!product) {
+      results.push({ term, matched: null, added: false });
+      continue;
+    }
+
+    const addRes = await fetch("https://api.kroger.com/v1/cart/add", {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ items: [{ upc: product.productId, quantity: 1 }] }),
+    });
+
+    results.push({ term, matched: product.description, added: addRes.ok });
+  }
+
+  return json({ results, storeLocationId: locationId });
+});

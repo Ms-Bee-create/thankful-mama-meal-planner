@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connecting to Kroger…</title>
+<style>
+  body{font-family:'Karla',sans-serif;background:#FAF5EC;color:#3A362E;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center;padding:20px;}
+  .box{max-width:360px;}
+  h1{font-size:20px;}
+  p{font-size:14px;opacity:.8;}
+</style>
+</head>
+<body>
+<div class="box">
+  <h1 id="msg">Connecting your Kroger account…</h1>
+  <p id="sub">Hang tight, this only takes a second.</p>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+const SUPABASE_URL = "https://idpytmlnhkikoavakyiw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkcHl0bWxuaGtpa29hdmFreWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NjI5MjEsImV4cCI6MjEwNTIzODkyMX0.X4s4pg8KMprtbwgIPO7rLVzLat8wzEtrh3_DvWw30sM";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+async function finish(){
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if(!session){
+    document.getElementById("msg").textContent = "Session expired";
+    document.getElementById("sub").textContent = "Please go back to the app and try connecting again.";
+    return;
+  }
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get("code");
+  const state = params.get("state");
+  const errorParam = params.get("error");
+
+  if(errorParam){
+    document.getElementById("msg").textContent = "Connection cancelled";
+    document.getElementById("sub").textContent = "You can try connecting again from the app whenever you're ready.";
+    return;
+  }
+  if(!code || !state){
+    document.getElementById("msg").textContent = "Something went wrong";
+    document.getElementById("sub").textContent = "Missing information from Kroger — head back and try again.";
+    return;
+  }
+
+  try{
+    const res = await fetch(SUPABASE_URL + "/functions/v1/kroger-auth", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + session.access_token
+      },
+      body: JSON.stringify({ code, state })
+    });
+    const data = await res.json();
+    if(res.ok && data.connected){
+      document.getElementById("msg").textContent = "Kroger connected!";
+      document.getElementById("sub").textContent = "Redirecting you back…";
+      setTimeout(() => { window.location.href = "/thankful-mama-meal-planner/?kroger=connected"; }, 1200);
+    } else {
+      document.getElementById("msg").textContent = "Couldn't finish connecting";
+      document.getElementById("sub").textContent = data.error || "Please try again from the app.";
+    }
+  } catch(e){
+    document.getElementById("msg").textContent = "Couldn't finish connecting";
+    document.getElementById("sub").textContent = "Please try again from the app.";
+  }
+}
+finish();
+</script>
+</body>
+</html>

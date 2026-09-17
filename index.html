@@ -81,6 +81,7 @@
   <p class="eyebrow">Thankful Mama Co · Meal Planner</p>
   <h1>Dinner Recipe Collection</h1>
   <p class="subhead">Circle what you're making this week, then build your shopping list</p>
+  <button id="krogerBtn" type="button" style="margin-top:14px;background:var(--sage);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Karla',sans-serif;">Connect Kroger account</button>
 </header>
 
 <div class="plan-bar">
@@ -96,7 +97,7 @@
 <div id="sections"></div>
 
 <footer>
-  Thankful Mama Co · Family Meal Planner · Turkey, Seafood, Meatless &amp; Flex-Protein still to come
+  Thankful Mama Co · Family Meal Planner · Breakfast, Lunch &amp; Snacks still to come
 </footer>
 
 </div>
@@ -111,7 +112,14 @@
       <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Or add straight to your Walmart cart, recipe by recipe</h4>
       <div id="linkList"></div>
     </div>
-    <div class="kroger-note">Kroger cart sync is coming soon — once it's live, picking recipes here will let you send this whole list straight to your Kroger cart in one tap.</div>
+    <div class="kroger-note" id="krogerSection">
+      <div id="krogerDisconnected">Connect your Kroger account (button at the top of the page) to send this whole list straight to your Kroger cart.</div>
+      <div id="krogerConnected" style="display:none;">
+        <label style="display:block;margin-bottom:8px;">Zip code for your store: <input id="krogerZip" type="text" maxlength="10" style="margin-left:6px;padding:4px 8px;border-radius:4px;border:1px solid var(--terracotta);width:100px;"></label>
+        <button id="krogerSyncBtn" type="button" style="background:var(--sage);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Karla',sans-serif;">Send list to my Kroger cart</button>
+        <div id="krogerSyncStatus" style="margin-top:10px;"></div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -294,7 +302,64 @@ async function initUser(){
       renderAll();
     }
   }
+
+  const params = new URLSearchParams(window.location.search);
+  if(params.get("kroger") === "connected"){
+    localStorage.setItem("kroger_connected", "true");
+    window.history.replaceState({}, "", window.location.pathname);
+  }
+  updateKrogerUI();
 }
+
+function updateKrogerUI(){
+  const connected = localStorage.getItem("kroger_connected") === "true";
+  document.getElementById("krogerDisconnected").style.display = connected ? "none" : "block";
+  document.getElementById("krogerConnected").style.display = connected ? "block" : "none";
+  const savedZip = localStorage.getItem("kroger_zip");
+  if(savedZip) document.getElementById("krogerZip").value = savedZip;
+}
+
+document.getElementById("krogerBtn").addEventListener("click", async () => {
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  if(!session) return;
+  const res = await fetch(SUPABASE_URL + "/functions/v1/kroger-auth?action=start", {
+    headers: { "Authorization": "Bearer " + session.access_token }
+  });
+  const data = await res.json();
+  if(data.url) window.location.href = data.url;
+});
+
+document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
+  const statusEl = document.getElementById("krogerSyncStatus");
+  const zip = document.getElementById("krogerZip").value.trim();
+  const chosen = RECIPES.filter(r => picked.has(r.id));
+  if(!chosen.length){
+    statusEl.textContent = "Pick some recipes first.";
+    return;
+  }
+  if(zip) localStorage.setItem("kroger_zip", zip);
+
+  const items = [...new Set(chosen.flatMap(r => r.ingredients))];
+  statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
+
+  const { data: { session } } = await supabaseClient.auth.getSession();
+  const res = await fetch(SUPABASE_URL + "/functions/v1/kroger-cart", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + session.access_token
+    },
+    body: JSON.stringify({ items, zip })
+  });
+  const data = await res.json();
+  if(!res.ok){
+    statusEl.textContent = "Couldn't sync: " + (data.error || "unknown error");
+    return;
+  }
+  const addedCount = data.results.filter(r => r.added).length;
+  statusEl.innerHTML = `Added ${addedCount} of ${data.results.length} items to your Kroger cart.` +
+    (addedCount < data.results.length ? "<br>Some ingredients were too generic to match — you may need to add a couple by hand." : "");
+});
 
 async function savePlan(){
   if(!userId) return;
