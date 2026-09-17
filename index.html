@@ -587,7 +587,15 @@ const WALMART_ITEM_IDS = {
 // canonical product URL itself. So "shop the list" here means one
 // affiliate link per matched ingredient (opens that item's page to add to
 // cart), not a single one-click "add everything" link.
+// Impact.com application isn't approved yet, so there's no real publisher
+// id to wrap links with — a placeholder id produces a malformed tracking
+// link that Impact rejects outright ("contact the editor of the
+// originating page"). Until IMPACT_PUBLISHER_ID is replaced with a real
+// value, links point straight at Walmart, untracked but working, instead
+// of a broken affiliate wrapper. No other code changes needed once you
+// drop in real Impact.com values — this switches over automatically.
 function buildImpactAffiliateUrl(rawUrl){
+  if(IMPACT_PUBLISHER_ID === "YOUR_PUBLISHER_ID") return rawUrl;
   return `https://goto.walmart.com/c/${IMPACT_PUBLISHER_ID}/${IMPACT_CAMPAIGN_ID}/${IMPACT_AD_ID}` +
     `?veh=aff&sourceid=${encodeURIComponent(IMPACT_SOURCE_ID)}&u=${encodeURIComponent(rawUrl)}`;
 }
