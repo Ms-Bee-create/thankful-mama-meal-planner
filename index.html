@@ -153,6 +153,10 @@
     <button class="close" id="closeOverlay" type="button">&times;</button>
     <h2>Your shopping list</h2>
     <div id="shopList"></div>
+    <div id="walmartBundleRow" class="recipe-link-row" style="display:none;">
+      <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Shop the whole list at once</h4>
+      <a id="walmartBundleLink" target="_blank" rel="noopener" style="display:inline-block;background:var(--cart);color:#fff;font-size:12px;font-weight:700;padding:9px 16px;border-radius:6px;text-decoration:none;">Shop this week's list at Walmart →</a>
+    </div>
     <div class="recipe-link-row">
       <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Or add straight to your Walmart cart, recipe by recipe</h4>
       <div id="linkList"></div>
@@ -521,6 +525,62 @@ function parseIngredientParts(ingredient){
     .filter(p => p.term && !PREP_ONLY_WORDS.has(p.term.toLowerCase()) && !PREP_PHRASE_RE.test(p.term));
 }
 
+// --- Walmart affiliate bundle links ---
+//
+// Walmart's multi-item collection page (https://www.walmart.com/co/ID1,ID2,...)
+// shows every listed item with one "Add all to cart" button. Wrapping that
+// URL in an Impact.com tracking link earns affiliate credit on whatever the
+// shopper buys through it, without needing Walmart's checkout API.
+//
+// TODO: fill in your real values from the Impact.com dashboard (Publisher
+// ID, and the campaign/ad/sourceid segments from your actual tracking
+// link) — these are placeholders and won't earn commission as-is.
+const IMPACT_PUBLISHER_ID = "YOUR_PUBLISHER_ID";
+const IMPACT_CAMPAIGN_ID = "123456";
+const IMPACT_AD_ID = "9383";
+const IMPACT_SOURCE_ID = "imp_00000000";
+
+// Ingredient term (lowercased, same normalized form parseIngredientParts
+// produces) -> real Walmart item id. There's no reliable way to auto-match
+// free-text ingredient names to the correct Walmart product, so this has
+// to be curated by hand — find the item on walmart.com, the numeric id is
+// in its URL (.../ip/.../<ITEM_ID>). Anything not in here is simply left
+// out of the bundle rather than guessed.
+const WALMART_ITEM_IDS = {
+  // "ground beef": "10450115",
+  // "yellow onion": "44390948",
+};
+
+function buildWalmartBundleUrl(itemIds){
+  const unique = [...new Set(itemIds)].filter(Boolean);
+  if(!unique.length) return null;
+  return `https://www.walmart.com/co/${unique.join(",")}`;
+}
+
+function buildImpactAffiliateUrl(rawUrl){
+  return `https://goto.walmart.com/c/${IMPACT_PUBLISHER_ID}/${IMPACT_CAMPAIGN_ID}/${IMPACT_AD_ID}` +
+    `?veh=aff&sourceid=${encodeURIComponent(IMPACT_SOURCE_ID)}&u=${encodeURIComponent(rawUrl)}`;
+}
+
+// Builds the affiliate bundle link for a recipe (or an already-merged
+// shopping list — anything with the same [{term}] shape). Returns null
+// when too few ingredients have a known Walmart item id to make a useful
+// bundle, so the UI can hide the button rather than link to an empty cart.
+function walmartBundleLinkFor(terms, minMatchFraction = 0.4){
+  if(!terms.length) return null;
+  const matchedIds = terms
+    .map(term => WALMART_ITEM_IDS[term.toLowerCase()])
+    .filter(Boolean);
+  if(matchedIds.length / terms.length < minMatchFraction) return null;
+  const rawUrl = buildWalmartBundleUrl(matchedIds);
+  return rawUrl ? buildImpactAffiliateUrl(rawUrl) : null;
+}
+
+function walmartBundleLinkForRecipe(recipe){
+  const terms = recipe.ingredients.flatMap(ing => parseIngredientParts(ing).map(p => p.term));
+  return walmartBundleLinkFor(terms);
+}
+
 // Combines parsed parts across every selected recipe: same item name +
 // same (or no) unit sums the quantity, so "1 lb ground beef" in one
 // recipe and "2 lb ground beef" in another becomes one 3 lb line. Matching
@@ -701,10 +761,19 @@ function buildCard(r){
   const actionHtml = r.cartUrl
     ? `<a class="cart-btn" href="${r.cartUrl}" target="_blank" rel="noopener">Add to Walmart cart →</a>`
     : `<span class="source-badge">${escapeHtml(r.source || "")}</span>`;
+  // Separate from the curated cartUrl above (a hand-picked Walmart recipe
+  // page) — this builds a bundle link from this recipe's own ingredients
+  // via WALMART_ITEM_IDS, so it also works for custom recipes with no
+  // cartUrl at all. Only shows once that lookup table actually has enough
+  // of this recipe's ingredients mapped to real Walmart item ids.
+  const bundleLink = walmartBundleLinkForRecipe(r);
+  const bundleHtml = bundleLink
+    ? `<a class="cart-btn" href="${bundleLink}" target="_blank" rel="noopener" style="margin-left:6px;">Shop ingredients at Walmart →</a>`
+    : "";
   const deleteHtml = r.isCustom
     ? `<button class="delete-recipe" type="button" title="Remove this recipe" style="background:none;border:none;color:var(--terracotta-dark);font-size:16px;cursor:pointer;padding:0 0 0 8px;">🗑</button>`
     : "";
-  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div><div style="display:flex;align-items:center;">${actionHtml}${deleteHtml}</div>`;
+  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div><div style="display:flex;align-items:center;flex-wrap:wrap;">${actionHtml}${bundleHtml}${deleteHtml}</div>`;
   if(r.isCustom){
     top.querySelector(".delete-recipe").addEventListener("click", () => {
       if(confirm(`Remove "${r.title}" from your recipes?`)) deleteCustomRecipe(r.id);
@@ -879,6 +948,7 @@ function renderShopList(){
       null
     ));
   }
+  updateWalmartBundleLink();
 }
 
 document.getElementById("listBtn").addEventListener("click", () => {
@@ -900,6 +970,23 @@ document.getElementById("listBtn").addEventListener("click", () => {
 
   document.getElementById("overlay").classList.add("open");
 });
+
+// Recomputed on every checkbox toggle (called from renderShopList) so it
+// always reflects whatever's currently checked in, not just what was
+// checked in when the list was first opened.
+function updateWalmartBundleLink(){
+  const bundleTerms = currentMergedList()
+    .filter(m => !excludedFromList.has(m.term.toLowerCase()))
+    .map(m => m.term);
+  const bundleLink = walmartBundleLinkFor(bundleTerms);
+  const bundleRow = document.getElementById("walmartBundleRow");
+  if(bundleLink){
+    document.getElementById("walmartBundleLink").href = bundleLink;
+    bundleRow.style.display = "block";
+  } else {
+    bundleRow.style.display = "none";
+  }
+}
 
 document.getElementById("closeOverlay").addEventListener("click", () => {
   document.getElementById("overlay").classList.remove("open");
