@@ -41,6 +41,27 @@ async function refreshAccessToken(refreshToken: string) {
   return res.json();
 }
 
+// Products and Locations are public catalog data — Kroger wants those
+// looked up with an app-level "client credentials" token, not the user's
+// personal one. Only Cart actually needs the user's own token.
+async function getAppToken() {
+  const basicAuth = btoa(`${KROGER_CLIENT_ID}:${KROGER_CLIENT_SECRET}`);
+  const res = await fetch("https://api.kroger.com/v1/connect/oauth2/token", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Authorization": `Basic ${basicAuth}`,
+    },
+    body: new URLSearchParams({
+      grant_type: "client_credentials",
+      scope: "product.compact",
+    }),
+  });
+  if (!res.ok) throw new Error("Failed to get Kroger app token: " + (await res.text()));
+  const data = await res.json();
+  return data.access_token as string;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS_HEADERS });
   if (req.method !== "POST") return json({ error: "Not found" }, 404);
@@ -79,12 +100,14 @@ Deno.serve(async (req) => {
     }).eq("user_id", userId);
   }
 
+  const appToken = await getAppToken();
+
   // Find the nearest store if we don't have one saved yet.
   if (!locationId) {
     if (!zip) return json({ error: "No store selected yet — need a zip code first" }, 400);
     const locRes = await fetch(
       `https://api.kroger.com/v1/locations?filter.zipCode.near=${encodeURIComponent(zip)}&filter.radiusInMiles=15&filter.limit=1`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${appToken}` } }
     );
     if (!locRes.ok) return json({ error: "Couldn't find a nearby Kroger store", detail: await locRes.text() }, 502);
     const locData = await locRes.json();
@@ -98,7 +121,7 @@ Deno.serve(async (req) => {
   for (const term of items) {
     const searchRes = await fetch(
       `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(term)}&filter.locationId=${locationId}&filter.limit=1`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
+      { headers: { Authorization: `Bearer ${appToken}` } }
     );
     if (!searchRes.ok) {
       results.push({ term, matched: null, added: false });
