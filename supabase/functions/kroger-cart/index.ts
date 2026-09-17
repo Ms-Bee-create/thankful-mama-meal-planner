@@ -171,18 +171,34 @@ Deno.serve(async (req) => {
       { headers: { Authorization: `Bearer ${appToken}` } }
     );
     if (!searchRes.ok) {
-      results.push({ term, matched: null, added: false, qty });
+      results.push({ term, matched: null, added: false, qty, reason: "search_failed" });
       continue;
     }
     const searchData = await searchRes.json();
     const candidates = (searchData.data || []).filter((p: any) => p.items?.[0]?.price?.regular != null);
     if (!candidates.length) {
-      results.push({ term, matched: null, added: false, qty });
+      results.push({ term, matched: null, added: false, qty, reason: "no_match" });
       continue;
     }
 
     const nonOrganic = candidates.filter((p: any) => !/organic/i.test(p.description));
-    const pool = nonOrganic.length ? nonOrganic : candidates;
+    let pool = nonOrganic.length ? nonOrganic : candidates;
+
+    // A few staples are conventionally bought in one standard household
+    // size regardless of how little a recipe actually uses (a "splash" of
+    // milk still means a real jug of milk, not the smallest carton on the
+    // shelf) — prefer that size when the store carries it.
+    const PREFERRED_SIZE_HINTS: [RegExp, RegExp][] = [
+      [/\bmilk\b/i, /gallon/i],
+    ];
+    for (const [termHint, sizeHint] of PREFERRED_SIZE_HINTS) {
+      if (termHint.test(term)) {
+        const preferred = pool.filter((p: any) => sizeHint.test(p.items?.[0]?.size || ""));
+        if (preferred.length) pool = preferred;
+        break;
+      }
+    }
+
     pool.sort((a: any, b: any) => a.items[0].price.regular - b.items[0].price.regular);
     const product = pool[0];
     const packSize: string | undefined = product.items?.[0]?.size;
@@ -219,7 +235,14 @@ Deno.serve(async (req) => {
       body: JSON.stringify({ items: [{ upc: product.productId, quantity: cartQty }] }),
     });
 
-    results.push({ term, matched: product.description, added: addRes.ok, qty: cartQty, packInfo: packSize });
+    results.push({
+      term,
+      matched: product.description,
+      added: addRes.ok,
+      qty: cartQty,
+      packInfo: packSize,
+      reason: addRes.ok ? undefined : "unavailable_at_store",
+    });
   }
 
   return json({ results, storeLocationId: locationId });

@@ -368,6 +368,12 @@ function parseIngredientParts(ingredient){
         unit = m[2] ? m[2].toLowerCase().replace(/s$/, "") : null;
         part = part.slice(m[0].length).trim();
       }
+      // Bare "pepper" (e.g. split out of "Salt & pepper") is ambiguous —
+      // could read as any pepper product in a search. When a recipe means
+      // bell pepper it always says so ("green bell pepper", "red bell
+      // pepper"), so a bare "pepper" left over is the spice — call it what
+      // it is instead of leaving it ambiguous.
+      if(part.trim().toLowerCase() === "pepper") part = "black pepper";
       return { term: part, qty, unit };
     })
     .filter(p => p.term && !PREP_ONLY_WORDS.has(p.term.toLowerCase()));
@@ -443,8 +449,11 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   if(zip) localStorage.setItem("kroger_zip", zip);
 
   // Respect anything unchecked on the combined list itself, not just what's
-  // marked "already have" per recipe.
-  const merged = currentMergedList().filter(m => !excludedFromList.has(m.term.toLowerCase()));
+  // marked "already have" per recipe. Also drop things nobody needs to buy —
+  // plain "water" stays on the ingredient checklist (so you know it's part
+  // of the recipe) but never gets sent to the cart.
+  const NEVER_BUY = new Set(["water"]);
+  const merged = currentMergedList().filter(m => !excludedFromList.has(m.term.toLowerCase()) && !NEVER_BUY.has(m.term.toLowerCase()));
   if(!merged.length){
     statusEl.textContent = "Nothing left on your list to send.";
     return;
@@ -478,9 +487,13 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   }
   const addedCount = data.results.filter(r => r.added).length;
   const multiPack = data.results.filter(r => r.added && r.qty > 1);
+  const missed = data.results.filter(r => !r.added);
+  const outOfStock = missed.filter(r => r.reason === "unavailable_at_store");
+  const noMatch = missed.filter(r => r.reason !== "unavailable_at_store");
   statusEl.innerHTML = `Added ${addedCount} of ${data.results.length} items to your Kroger cart.` +
     (multiPack.length ? "<br>" + multiPack.map(r => `${r.qty}× ${r.matched}`).join(", ") + " — added extra packs to cover the total you needed." : "") +
-    (addedCount < data.results.length ? "<br>Some ingredients were too generic to match — you may need to add a couple by hand." : "");
+    (outOfStock.length ? "<br>Not available at your store right now: " + outOfStock.map(r => escapeHtml(r.matched || r.term)).join(", ") : "") +
+    (noMatch.length ? "<br>Too generic to match — add these by hand: " + noMatch.map(r => escapeHtml(r.term)).join(", ") : "");
 });
 
 async function savePlan(){
@@ -621,7 +634,7 @@ function renderShopList(){
   merged.forEach(m => {
     const key = m.term.toLowerCase();
     const excluded = excludedFromList.has(key);
-    const fromLabel = m.recipeTitles.size > 1 ? ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>` : "";
+    const fromLabel = ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>`;
     // Unit-based amounts read fine leading with the number ("1 lb ground
     // beef"). Unit-less counts ("need 2 egg") read badly leading with the
     // number, since we don't know the plural of every ingredient name — so
