@@ -153,9 +153,10 @@
     <button class="close" id="closeOverlay" type="button">&times;</button>
     <h2>Your shopping list</h2>
     <div id="shopList"></div>
-    <div id="walmartBundleRow" class="recipe-link-row" style="display:none;">
-      <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Shop the whole list at once</h4>
-      <a id="walmartBundleLink" target="_blank" rel="noopener" style="display:inline-block;background:var(--cart);color:#fff;font-size:12px;font-weight:700;padding:9px 16px;border-radius:6px;text-decoration:none;">Shop this week's list at Walmart →</a>
+    <div id="walmartItemLinksRow" class="recipe-link-row" style="display:none;">
+      <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Shop this list at Walmart — tap each item to add it</h4>
+      <p style="font-size:11px;opacity:.7;margin:0 0 8px;">Walmart doesn't offer one link that adds everything at once, so these open one item at a time.</p>
+      <div id="walmartItemLinks" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
     </div>
     <div class="recipe-link-row">
       <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Or add straight to your Walmart cart, recipe by recipe</h4>
@@ -575,34 +576,34 @@ const WALMART_ITEM_IDS = {
   "chicken broth": "10899013",         // Great Value Chicken Broth, 32 oz Carton
 };
 
-function buildWalmartBundleUrl(itemIds){
-  const unique = [...new Set(itemIds)].filter(Boolean);
-  if(!unique.length) return null;
-  return `https://www.walmart.com/co/${unique.join(",")}`;
-}
-
+// NOTE: Walmart's much-discussed "/co/ID1,ID2,..." multi-item bundle page
+// does NOT actually work — tested directly against real item ids (single
+// and multiple, with and without a trailing slash) and every one silently
+// redirected to the Walmart homepage. Walmart doesn't give third-party
+// affiliates a documented way to add several items to a shopper's cart
+// from one URL the way Kroger's Cart API does. What does work, verified
+// live, is a link straight to an individual product page:
+// https://www.walmart.com/ip/<item_id> — Walmart redirects that to the
+// canonical product URL itself. So "shop the list" here means one
+// affiliate link per matched ingredient (opens that item's page to add to
+// cart), not a single one-click "add everything" link.
 function buildImpactAffiliateUrl(rawUrl){
   return `https://goto.walmart.com/c/${IMPACT_PUBLISHER_ID}/${IMPACT_CAMPAIGN_ID}/${IMPACT_AD_ID}` +
     `?veh=aff&sourceid=${encodeURIComponent(IMPACT_SOURCE_ID)}&u=${encodeURIComponent(rawUrl)}`;
 }
 
-// Builds the affiliate bundle link for a recipe (or an already-merged
-// shopping list — anything with the same [{term}] shape). Returns null
-// when too few ingredients have a known Walmart item id to make a useful
-// bundle, so the UI can hide the button rather than link to an empty cart.
-function walmartBundleLinkFor(terms, minMatchFraction = 0.4){
-  if(!terms.length) return null;
-  const matchedIds = terms
-    .map(term => WALMART_ITEM_IDS[term.toLowerCase()])
-    .filter(Boolean);
-  if(matchedIds.length / terms.length < minMatchFraction) return null;
-  const rawUrl = buildWalmartBundleUrl(matchedIds);
-  return rawUrl ? buildImpactAffiliateUrl(rawUrl) : null;
-}
-
-function walmartBundleLinkForRecipe(recipe){
-  const terms = recipe.ingredients.flatMap(ing => parseIngredientParts(ing).map(p => p.term));
-  return walmartBundleLinkFor(terms);
+// Returns [{term, url}] for every term that has a known Walmart item id —
+// one affiliate link per item, in place of a single "add all" link.
+function walmartAffiliateLinksFor(terms){
+  const seen = new Set();
+  const links = [];
+  terms.forEach(term => {
+    const id = WALMART_ITEM_IDS[term.toLowerCase()];
+    if(!id || seen.has(id)) return;
+    seen.add(id);
+    links.push({ term, url: buildImpactAffiliateUrl(`https://www.walmart.com/ip/${id}`) });
+  });
+  return links;
 }
 
 // Combines parsed parts across every selected recipe: same item name +
@@ -785,19 +786,15 @@ function buildCard(r){
   const actionHtml = r.cartUrl
     ? `<a class="cart-btn" href="${r.cartUrl}" target="_blank" rel="noopener">Add to Walmart cart →</a>`
     : `<span class="source-badge">${escapeHtml(r.source || "")}</span>`;
-  // Separate from the curated cartUrl above (a hand-picked Walmart recipe
-  // page) — this builds a bundle link from this recipe's own ingredients
-  // via WALMART_ITEM_IDS, so it also works for custom recipes with no
-  // cartUrl at all. Only shows once that lookup table actually has enough
-  // of this recipe's ingredients mapped to real Walmart item ids.
-  const bundleLink = walmartBundleLinkForRecipe(r);
-  const bundleHtml = bundleLink
-    ? `<a class="cart-btn" href="${bundleLink}" target="_blank" rel="noopener" style="margin-left:6px;">Shop ingredients at Walmart →</a>`
-    : "";
+  // Per-item Walmart links for this recipe show up on the combined
+  // shopping list once it's picked (see updateWalmartLinks) rather than
+  // here — a single button on every card isn't useful when what it'd
+  // actually open is a list of several separate item links, not one
+  // "add all" action (Walmart doesn't offer that to affiliates).
   const deleteHtml = r.isCustom
     ? `<button class="delete-recipe" type="button" title="Remove this recipe" style="background:none;border:none;color:var(--terracotta-dark);font-size:16px;cursor:pointer;padding:0 0 0 8px;">🗑</button>`
     : "";
-  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div><div style="display:flex;align-items:center;flex-wrap:wrap;">${actionHtml}${bundleHtml}${deleteHtml}</div>`;
+  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div><div style="display:flex;align-items:center;flex-wrap:wrap;">${actionHtml}${deleteHtml}</div>`;
   if(r.isCustom){
     top.querySelector(".delete-recipe").addEventListener("click", () => {
       if(confirm(`Remove "${r.title}" from your recipes?`)) deleteCustomRecipe(r.id);
@@ -972,7 +969,7 @@ function renderShopList(){
       null
     ));
   }
-  updateWalmartBundleLink();
+  updateWalmartItemLinks();
 }
 
 document.getElementById("listBtn").addEventListener("click", () => {
@@ -998,17 +995,27 @@ document.getElementById("listBtn").addEventListener("click", () => {
 // Recomputed on every checkbox toggle (called from renderShopList) so it
 // always reflects whatever's currently checked in, not just what was
 // checked in when the list was first opened.
-function updateWalmartBundleLink(){
-  const bundleTerms = currentMergedList()
+function updateWalmartItemLinks(){
+  const terms = currentMergedList()
     .filter(m => !excludedFromList.has(m.term.toLowerCase()))
     .map(m => m.term);
-  const bundleLink = walmartBundleLinkFor(bundleTerms);
-  const bundleRow = document.getElementById("walmartBundleRow");
-  if(bundleLink){
-    document.getElementById("walmartBundleLink").href = bundleLink;
-    bundleRow.style.display = "block";
+  const links = walmartAffiliateLinksFor(terms);
+  const row = document.getElementById("walmartItemLinksRow");
+  const container = document.getElementById("walmartItemLinks");
+  container.innerHTML = "";
+  if(links.length){
+    links.forEach(({ term, url }) => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = term;
+      a.style.cssText = "display:inline-block;background:var(--cart);color:#fff;font-size:12px;font-weight:700;padding:7px 12px;border-radius:6px;text-decoration:none;";
+      container.appendChild(a);
+    });
+    row.style.display = "block";
   } else {
-    bundleRow.style.display = "none";
+    row.style.display = "none";
   }
 }
 
