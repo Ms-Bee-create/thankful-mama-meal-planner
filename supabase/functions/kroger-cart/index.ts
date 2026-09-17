@@ -223,7 +223,30 @@ Deno.serve(async (req) => {
       else if (fallback.length) pool = fallback;
     }
 
-    pool.sort((a: any, b: any) => a.items[0].price.regular - b.items[0].price.regular);
+    // Sorting by absolute price picks the cheapest pack in the store no
+    // matter how small it is — a single 1lb pack of ground beef at $5.99
+    // "wins" over a "3 lb for $11.99" bulk deal even though the bulk pack
+    // is actually cheaper per pound. Sort by price-per-unit (per oz, or per
+    // count for dozen/ct items) instead, so real deals get picked; fall
+    // back to absolute price only when a candidate's pack size can't be
+    // parsed at all.
+    const unitPrice = (p: any): number | null => {
+      const size = p.items?.[0]?.size;
+      const price = p.items?.[0]?.price?.regular;
+      if (price == null) return null;
+      const oz = packOzFromSize(size);
+      if (oz) return price / oz;
+      const count = packUnitsFromSize(size);
+      if (count) return price / count;
+      return null;
+    };
+    pool.sort((a: any, b: any) => {
+      const ua = unitPrice(a), ub = unitPrice(b);
+      if (ua != null && ub != null) return ua - ub;
+      if (ua != null) return -1;
+      if (ub != null) return 1;
+      return a.items[0].price.regular - b.items[0].price.regular;
+    });
     const product = pool[0];
     const packSize: string | undefined = product.items?.[0]?.size;
 
