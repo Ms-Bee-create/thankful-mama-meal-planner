@@ -731,27 +731,26 @@ function currentMergedList(){
   return mergeIngredients(chosen);
 }
 
-function renderShopList(){
-  const shopList = document.getElementById("shopList");
-  shopList.innerHTML = "";
-  const merged = currentMergedList();
+// Long-shelf-life pantry staples — the kind of thing Walmart's own list
+// puts under "you might already have these" instead of the main list,
+// since one bottle/bag typically outlasts several weeks of meal plans.
+// These default OFF (you add them in manually if you're actually out),
+// same idea as pantry_have but without needing to mark each one by hand
+// first.
+const STAPLE_RE = /\b(flour|sugar|black pepper|garlic powder|onion powder|paprika|cumin|oregano|thyme|chili powder|italian seasoning|cinnamon|baking soda|baking powder|vanilla|cornstarch|honey|soy sauce|worcestershire|old bay|curry powder|za'?atar|greek seasoning|cayenne|ranch seasoning|taco seasoning)\b|\boil\b|^salt$/i;
+function isStaple(term){ return STAPLE_RE.test(term); }
+
+function buildShopGroup(title, items, emptyNote){
   const group = document.createElement("div");
   group.className = "shop-group";
-  group.innerHTML = `<h4>Combined list (${merged.length} items) — uncheck anything you don't need</h4>`;
-
-  if(!merged.length){
-    group.innerHTML += "<div style='font-size:13px;'>Nothing left to buy — you've checked off everything!</div>";
+  group.innerHTML = `<h4>${escapeHtml(title)}</h4>`;
+  if(!items.length && emptyNote){
+    group.innerHTML += `<div style="font-size:13px;">${escapeHtml(emptyNote)}</div>`;
+    return group;
   }
 
-  merged.forEach(m => {
+  items.forEach(m => {
     const key = m.term.toLowerCase();
-    // The first time we see a pantry-stocked item this session, exclude it
-    // by default (you said you already have it) — but only once, so
-    // toggling it back on manually sticks for the rest of the session.
-    if(pantryStillGood(key) && !pantrySeeded.has(key)){
-      excludedFromList.add(key);
-      pantrySeeded.add(key);
-    }
     const excluded = excludedFromList.has(key);
     const fromLabel = ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>`;
     // "tsp" is our internal normalized marker for anything measured in
@@ -804,7 +803,41 @@ function renderShopList(){
     group.appendChild(row);
   });
 
-  shopList.appendChild(group);
+  return group;
+}
+
+function renderShopList(){
+  const shopList = document.getElementById("shopList");
+  shopList.innerHTML = "";
+  const merged = currentMergedList();
+
+  merged.forEach(m => {
+    const key = m.term.toLowerCase();
+    // First time seeing an item this session: pantry-marked items exclude
+    // by default (you said you already have it); staples default off too,
+    // Walmart-list style, since one bottle of oil outlasts several weeks
+    // of meal plans. Only once, so a manual toggle back on sticks after.
+    if((pantryStillGood(key) || isStaple(m.term)) && !pantrySeeded.has(key)){
+      excludedFromList.add(key);
+      pantrySeeded.add(key);
+    }
+  });
+
+  const staples = merged.filter(m => isStaple(m.term));
+  const mainItems = merged.filter(m => !isStaple(m.term));
+
+  shopList.appendChild(buildShopGroup(
+    `Shopping list (${mainItems.length} items) — uncheck anything you don't need`,
+    mainItems,
+    "Nothing left to buy — you've checked off everything!"
+  ));
+  if(staples.length){
+    shopList.appendChild(buildShopGroup(
+      "You might already have these — check off any you actually need this week",
+      staples,
+      null
+    ));
+  }
 }
 
 document.getElementById("listBtn").addEventListener("click", () => {
