@@ -620,16 +620,22 @@ function renderShopList(){
   merged.forEach(m => {
     const key = m.term.toLowerCase();
     const excluded = excludedFromList.has(key);
-    const qtyLabel = m.unit
-      ? `${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}`
-      : (m.qty > 1 ? `need ${m.qty}` : "");
     const fromLabel = m.recipeTitles.size > 1 ? ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>` : "";
+    // Unit-based amounts read fine leading with the number ("1 lb ground
+    // beef"). Unit-less counts ("need 2 egg") read badly leading with the
+    // number, since we don't know the plural of every ingredient name — so
+    // put those after the term instead: "egg — need 2".
+    const itemLine = m.unit
+      ? `<strong>${escapeHtml(`${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}`)}</strong> ${escapeHtml(m.term)}`
+      : (m.qty > 1
+        ? `${escapeHtml(m.term)} <strong>— need ${m.qty}</strong>`
+        : escapeHtml(m.term));
 
     const row = document.createElement("div");
     row.className = "shop-item";
     row.style.cursor = "pointer";
     row.innerHTML = `<span class="box${excluded ? "" : " checked"}">${excluded ? "" : "✓"}</span>` +
-      `<span style="${excluded ? "text-decoration:line-through;opacity:.5;" : ""}">${qtyLabel ? `<strong>${escapeHtml(qtyLabel)}</strong> ` : ""}${escapeHtml(m.term)}${fromLabel}</span>`;
+      `<span style="${excluded ? "text-decoration:line-through;opacity:.5;" : ""}">${itemLine}${fromLabel}</span>`;
     row.addEventListener("click", () => {
       if(excluded) excludedFromList.delete(key); else excludedFromList.add(key);
       renderShopList();
