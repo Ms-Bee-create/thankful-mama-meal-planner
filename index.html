@@ -110,7 +110,6 @@
   <div class="list-modal">
     <button class="close" id="closeOverlay" type="button">&times;</button>
     <h2>Your shopping list</h2>
-    <p style="font-size:13px;color:var(--charcoal);opacity:.8;">Combined ingredients for everything you picked. Check things off you already have.</p>
     <div id="shopList"></div>
     <div class="recipe-link-row">
       <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Or add straight to your Walmart cart, recipe by recipe</h4>
@@ -345,7 +344,7 @@ const PREP_ONLY_WORDS = new Set([
   "shredded","peeled","deveined","drained","halved","grated","cut","divided",
   "optional","to taste","for garnish","garnish"
 ]);
-const QTY_UNIT_RE = /^\s*(\d+\s?\/\s?\d+|\d+\.\d+|\d+)\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct)?\.?\s+/i;
+const QTY_UNIT_RE = /^\s*(\d+\s?\/\s?\d+|\d+\.\d+|\d+)\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct|gallon|gallons|gal|quart|quarts|qt|pint|pints|dozen)?\.?\s+/i;
 
 function parseFraction(str){
   if(str.includes("/")){
@@ -385,6 +384,14 @@ function findMergeMatch(merged, term){
   const lower = term.toLowerCase();
   for(const [key, entry] of merged){
     if(key === lower) return key;
+    // Fuzzy (substring) matching only kicks in when the shorter phrase has
+    // 2+ words — a single generic word like "pepper" or "onion" must match
+    // exactly, so it doesn't wrongly swallow "bell pepper" or "green onion"
+    // into its total. Multi-word phrases like "ground beef" still fuzzy-match
+    // against "80/20 ground beef chuck".
+    const keyWords = key.split(" ").length;
+    const lowerWords = lower.split(" ").length;
+    if(Math.min(keyWords, lowerWords) < 2) continue;
     const a = ` ${key} `, b = ` ${lower} `;
     if(a.includes(b) || b.includes(a)) return key;
   }
