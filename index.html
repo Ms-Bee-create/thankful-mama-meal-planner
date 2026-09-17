@@ -329,6 +329,27 @@ document.getElementById("krogerBtn").addEventListener("click", async () => {
   if(data.url) window.location.href = data.url;
 });
 
+// Many ingredient lines bundle several items into one string for readable
+// display ("Garlic powder, onion powder, paprika, thyme"), but Kroger's
+// product search needs one item per query — split those apart, and strip
+// quantities/parenthetical notes that would otherwise confuse the search.
+const PREP_ONLY_WORDS = new Set([
+  "minced","diced","chopped","sliced","melted","beaten","cubed","crumbled",
+  "shredded","peeled","deveined","drained","halved","grated","cut","divided",
+  "optional","to taste","for garnish","garnish"
+]);
+
+function splitIngredientForSearch(ingredient){
+  return ingredient
+    .split(/,| & | and /i)
+    .map(part => part
+      .replace(/\([^)]*\)/g, "")
+      .replace(/^\s*[\d/.]+\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct)?\.?\s+/i, "")
+      .trim()
+    )
+    .filter(part => part && !PREP_ONLY_WORDS.has(part.toLowerCase()));
+}
+
 document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   const statusEl = document.getElementById("krogerSyncStatus");
   const zip = document.getElementById("krogerZip").value.trim();
@@ -339,7 +360,7 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   }
   if(zip) localStorage.setItem("kroger_zip", zip);
 
-  const items = [...new Set(chosen.flatMap(r => r.ingredients))];
+  const items = [...new Set(chosen.flatMap(r => r.ingredients).flatMap(splitIngredientForSearch))];
   statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
 
   const { data: { session } } = await supabaseClient.auth.getSession();
