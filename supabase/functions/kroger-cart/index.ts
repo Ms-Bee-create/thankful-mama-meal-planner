@@ -120,11 +120,11 @@ Deno.serve(async (req) => {
 
   const results: { term: string; matched: string | null; added: boolean; qty: number; packInfo?: string }[] = [];
 
-  // Normalize items: accept either plain strings (old shape) or {term, qty, isCount}.
-  const normalizedItems: { term: string; qty: number; isCount: boolean }[] = items.map((it: unknown) =>
+  // Normalize items: accept either plain strings (old shape) or {term, qty, isCount, unit}.
+  const normalizedItems: { term: string; qty: number; isCount: boolean; unit: string | null }[] = items.map((it: unknown) =>
     typeof it === "string"
-      ? { term: it, qty: 1, isCount: false }
-      : { term: (it as any).term, qty: (it as any).qty || 1, isCount: !!(it as any).isCount }
+      ? { term: it, qty: 1, isCount: false, unit: null }
+      : { term: (it as any).term, qty: (it as any).qty || 1, isCount: !!(it as any).isCount, unit: (it as any).unit || null }
   );
 
   // "2 dozen", "18 ct", "12 count" etc. -> how many individual units are in
@@ -140,7 +140,29 @@ Deno.serve(async (req) => {
     return null;
   }
 
-  for (const { term, qty, isCount } of normalizedItems) {
+  // "8 oz" ingredient against a "15 oz" can should add 1 can, not 8 —
+  // parse how many ounces are actually in one pack of the matched product
+  // so oz/lb amounts get converted into a pack count instead of being used
+  // as one directly. Only handles weight ounces (canned/packaged goods),
+  // not fluid ounces of liquid, which is close enough for grocery-shelf sizes.
+  function packOzFromSize(size: string | undefined): number | null {
+    if (!size) return null;
+    const s = size.toLowerCase();
+    const ozMatch = s.match(/(\d+(\.\d+)?)\s*(oz|ounce|ounces)\b/);
+    if (ozMatch) return parseFloat(ozMatch[1]);
+    const lbMatch = s.match(/(\d+(\.\d+)?)\s*(lb|lbs|pound|pounds)\b/);
+    if (lbMatch) return parseFloat(lbMatch[1]) * 16;
+    return null;
+  }
+
+  // Units that are themselves a pack count (a "can" or "bag" already IS the
+  // thing you buy) vs. weight units that need converting against the real
+  // product size vs. small culinary measures (cup, tsp, tbsp, clove...)
+  // where doubling the pack count would be wrong — those just need 1 pack.
+  const PACK_COUNT_UNITS = new Set(["can", "cans", "jar", "jars", "bag", "bags", "pkg", "packet", "packets"]);
+  const WEIGHT_UNITS = new Set(["oz", "lb"]);
+
+  for (const { term, qty, isCount, unit } of normalizedItems) {
     // Pull a handful of candidates rather than just the top hit, so we can
     // pick the cheapest one instead of whatever Kroger's default ranking
     // (often a pricier private-label organic item) happens to put first.
@@ -165,15 +187,28 @@ Deno.serve(async (req) => {
     const product = pool[0];
     const packSize: string | undefined = product.items?.[0]?.size;
 
-    // For counted items (eggs, buns…) figure out how many packs actually
-    // cover the total needed — e.g. 14 eggs against a "1 dozen" carton
-    // means 2 cartons, not 1. If the pack size can't be parsed, fall back
-    // to 1 pack rather than guessing.
-    let cartQty = qty;
+    // Figure out how many packs of the matched product actually cover the
+    // amount needed, instead of treating the ingredient's number as a pack
+    // count directly.
+    let cartQty = 1;
     if (isCount) {
+      // Counted items (eggs, buns…) — e.g. 14 eggs against a "1 dozen"
+      // carton means 2 cartons, not 1.
       const unitsPerPack = packUnitsFromSize(packSize);
       cartQty = unitsPerPack ? Math.ceil(qty / unitsPerPack) : 1;
+    } else if (unit && WEIGHT_UNITS.has(unit)) {
+      // Weight amounts (8 oz, 1 lb…) — e.g. 8 oz of tomato sauce against a
+      // "15 oz" can means 1 can, not 8. Convert lb to oz for comparison.
+      const neededOz = unit === "lb" ? qty * 16 : qty;
+      const packOz = packOzFromSize(packSize);
+      cartQty = packOz ? Math.max(1, Math.ceil(neededOz / packOz)) : 1;
+    } else if (unit && PACK_COUNT_UNITS.has(unit)) {
+      // "2 cans diced tomatoes" already means 2 packages, literally.
+      cartQty = Math.max(1, Math.round(qty));
     }
+    // Anything else (cup, tsp, tbsp, clove, slice…) is a small culinary
+    // measure, not a retail pack size — one package covers it, so cartQty
+    // stays at 1 rather than multiplying by the recipe's number.
 
     const addRes = await fetch("https://api.kroger.com/v1/cart/add", {
       method: "PUT",

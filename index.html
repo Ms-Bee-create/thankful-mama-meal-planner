@@ -457,6 +457,7 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   const items = merged.map(m => ({
     term: m.term,
     qty: Math.max(1, Math.round(m.qty)),
+    unit: m.unit || null,
     isCount: !m.unit
   }));
   statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
@@ -625,8 +626,10 @@ function renderShopList(){
     // beef"). Unit-less counts ("need 2 egg") read badly leading with the
     // number, since we don't know the plural of every ingredient name — so
     // put those after the term instead: "egg — need 2".
+    const NO_PLURAL_UNITS = new Set(["oz", "tsp", "tbsp", "ct", "dozen"]);
+    const unitLabel = m.unit && m.qty !== 1 && !NO_PLURAL_UNITS.has(m.unit) ? `${m.unit}s` : m.unit;
     const itemLine = m.unit
-      ? `<strong>${escapeHtml(`${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}`)}</strong> ${escapeHtml(m.term)}`
+      ? `<strong>${escapeHtml(`${m.qty} ${unitLabel}`)}</strong> ${escapeHtml(m.term)}`
       : (m.qty > 1
         ? `${escapeHtml(m.term)} <strong>— need ${m.qty}</strong>`
         : escapeHtml(m.term));
