@@ -1,7 +1,9 @@
-// Given a list of ingredient search terms, finds matching Kroger products
-// near the user's chosen store and adds them to the user's real Kroger cart.
+// Given a list of ingredient search terms (with quantities), finds matching
+// Kroger products near the user's chosen store — preferring the cheapest
+// non-organic match, since organic private-label items were getting picked
+// by default — and adds them to the user's real Kroger cart.
 //
-// POST { items: string[], zip?: string }
+// POST { items: ({ term: string, qty?: number } | string)[], zip?: string }
 // Requires the user's Supabase JWT in the Authorization header.
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -116,23 +118,36 @@ Deno.serve(async (req) => {
     await supabase.from("kroger_connections").update({ kroger_location_id: locationId }).eq("user_id", userId);
   }
 
-  const results: { term: string; matched: string | null; added: boolean }[] = [];
+  const results: { term: string; matched: string | null; added: boolean; qty: number }[] = [];
 
-  for (const term of items) {
+  // Normalize items: accept either plain strings (old shape) or {term, qty}.
+  const normalizedItems: { term: string; qty: number }[] = items.map((it: unknown) =>
+    typeof it === "string" ? { term: it, qty: 1 } : { term: (it as any).term, qty: (it as any).qty || 1 }
+  );
+
+  for (const { term, qty } of normalizedItems) {
+    // Pull a handful of candidates rather than just the top hit, so we can
+    // pick the cheapest one instead of whatever Kroger's default ranking
+    // (often a pricier private-label organic item) happens to put first.
     const searchRes = await fetch(
-      `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(term)}&filter.locationId=${locationId}&filter.limit=1`,
+      `https://api.kroger.com/v1/products?filter.term=${encodeURIComponent(term)}&filter.locationId=${locationId}&filter.limit=8`,
       { headers: { Authorization: `Bearer ${appToken}` } }
     );
     if (!searchRes.ok) {
-      results.push({ term, matched: null, added: false });
+      results.push({ term, matched: null, added: false, qty });
       continue;
     }
     const searchData = await searchRes.json();
-    const product = searchData.data?.[0];
-    if (!product) {
-      results.push({ term, matched: null, added: false });
+    const candidates = (searchData.data || []).filter((p: any) => p.items?.[0]?.price?.regular != null);
+    if (!candidates.length) {
+      results.push({ term, matched: null, added: false, qty });
       continue;
     }
+
+    const nonOrganic = candidates.filter((p: any) => !/organic/i.test(p.description));
+    const pool = nonOrganic.length ? nonOrganic : candidates;
+    pool.sort((a: any, b: any) => a.items[0].price.regular - b.items[0].price.regular);
+    const product = pool[0];
 
     const addRes = await fetch("https://api.kroger.com/v1/cart/add", {
       method: "PUT",
@@ -140,10 +155,10 @@ Deno.serve(async (req) => {
         Authorization: `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ items: [{ upc: product.productId, quantity: 1 }] }),
+      body: JSON.stringify({ items: [{ upc: product.productId, quantity: qty }] }),
     });
 
-    results.push({ term, matched: product.description, added: addRes.ok });
+    results.push({ term, matched: product.description, added: addRes.ok, qty });
   }
 
   return json({ results, storeLocationId: locationId });

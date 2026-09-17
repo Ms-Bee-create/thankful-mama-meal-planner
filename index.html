@@ -53,7 +53,9 @@
   h3.label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--terracotta-dark);border-bottom:1px dotted var(--terracotta);padding-bottom:3px;margin:0 0 8px;}
   ul.ing-list{list-style:none;margin:0;padding:0;}
   ul.ing-list li{display:flex;gap:7px;font-size:13px;padding:3px 0;align-items:flex-start;}
-  .box{flex:none;width:10px;height:10px;border:1.3px solid var(--terracotta);margin-top:3px;border-radius:1px;}
+  .box{flex:none;width:10px;height:10px;border:1.3px solid var(--terracotta);margin-top:3px;border-radius:1px;display:flex;align-items:center;justify-content:center;font-size:8px;color:#fff;}
+  .box.checked{background:var(--terracotta);}
+  ul.ing-list li{cursor:pointer;}
   ol.steps-list{margin:0;padding-left:18px;font-size:13px;}
   ol.steps-list li{padding:2.5px 0;}
   .note{font-size:11px;color:var(--terracotta-dark);font-style:italic;margin-top:8px;}
@@ -286,6 +288,7 @@ let userId = null;
 
 let activeFilter = "all";
 const picked = new Set();
+const haveItems = new Set(); // ingredients the user already has on hand — session only, not persisted
 
 async function initUser(){
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -331,23 +334,80 @@ document.getElementById("krogerBtn").addEventListener("click", async () => {
 
 // Many ingredient lines bundle several items into one string for readable
 // display ("Garlic powder, onion powder, paprika, thyme"), but Kroger's
-// product search needs one item per query — split those apart, and strip
-// quantities/parenthetical notes that would otherwise confuse the search.
+// product search needs one item per query — split those apart, pull out
+// any quantity/unit so amounts can be combined across recipes, and strip
+// parenthetical notes that would otherwise confuse the search.
 const PREP_ONLY_WORDS = new Set([
   "minced","diced","chopped","sliced","melted","beaten","cubed","crumbled",
   "shredded","peeled","deveined","drained","halved","grated","cut","divided",
   "optional","to taste","for garnish","garnish"
 ]);
+const QTY_UNIT_RE = /^\s*(\d+\s?\/\s?\d+|\d+\.\d+|\d+)\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct)?\.?\s+/i;
 
-function splitIngredientForSearch(ingredient){
+function parseFraction(str){
+  if(str.includes("/")){
+    const [n, d] = str.split("/").map(s => parseFloat(s.trim()));
+    return d ? n / d : parseFloat(str);
+  }
+  return parseFloat(str);
+}
+
+// Returns [{term, qty, unit}] for one ingredient line, splitting bundled
+// items apart and pulling a leading quantity/unit off each piece.
+function parseIngredientParts(ingredient){
   return ingredient
     .split(/,| & | and /i)
-    .map(part => part
-      .replace(/\([^)]*\)/g, "")
-      .replace(/^\s*[\d/.]+\s*(lb|lbs|oz|cup|cups|tsp|tbsp|can|cans|pkg|packet|clove|cloves|slice|slices|bag|jar|ct)?\.?\s+/i, "")
-      .trim()
-    )
-    .filter(part => part && !PREP_ONLY_WORDS.has(part.toLowerCase()));
+    .map(raw => {
+      let part = raw.replace(/\([^)]*\)/g, "").trim();
+      let qty = 1, unit = null;
+      const m = part.match(QTY_UNIT_RE);
+      if(m){
+        qty = parseFraction(m[1]) || 1;
+        unit = m[2] ? m[2].toLowerCase().replace(/s$/, "") : null;
+        part = part.slice(m[0].length).trim();
+      }
+      return { term: part, qty, unit };
+    })
+    .filter(p => p.term && !PREP_ONLY_WORDS.has(p.term.toLowerCase()));
+}
+
+// Combines parsed parts across every selected recipe: same item name +
+// same (or no) unit sums the quantity, so "1 lb ground beef" in one
+// recipe and "2 lb ground beef" in another becomes one 3 lb line. Matching
+// is fuzzy on purpose — "80/20 ground beef chuck" and "ground beef" are
+// the same shopping-list item even though the text differs, so one term
+// containing the other (whole-word) counts as a match, keyed by whichever
+// text is shorter/more generic.
+function findMergeMatch(merged, term){
+  const lower = term.toLowerCase();
+  for(const [key, entry] of merged){
+    if(key === lower) return key;
+    const a = ` ${key} `, b = ` ${lower} `;
+    if(a.includes(b) || b.includes(a)) return key;
+  }
+  return null;
+}
+
+function mergeIngredients(recipes){
+  const merged = new Map();
+  recipes.forEach(r => {
+    r.ingredients.forEach((ing, idx) => {
+      if(haveItems.has(r.id + "::" + idx)) return; // already have it — skip
+      parseIngredientParts(ing).forEach(({ term, qty, unit }) => {
+        const matchKey = findMergeMatch(merged, term);
+        if(!matchKey){
+          merged.set(term.toLowerCase(), { term, qty, unit, recipeTitles: new Set([r.title]) });
+        } else {
+          const existing = merged.get(matchKey);
+          existing.recipeTitles.add(r.title);
+          if(existing.unit === unit) existing.qty += qty;
+          else existing.qty = Math.max(existing.qty, 1) + 1; // different/no units — just count occurrences
+          if(term.length < existing.term.length) existing.term = term; // prefer the shorter, more generic label
+        }
+      });
+    });
+  });
+  return [...merged.values()];
 }
 
 document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
@@ -360,7 +420,8 @@ document.getElementById("krogerSyncBtn").addEventListener("click", async () => {
   }
   if(zip) localStorage.setItem("kroger_zip", zip);
 
-  const items = [...new Set(chosen.flatMap(r => r.ingredients).flatMap(splitIngredientForSearch))];
+  const merged = mergeIngredients(chosen);
+  const items = merged.map(m => ({ term: m.term, qty: Math.max(1, Math.round(m.qty)) }));
   statusEl.textContent = "Sending " + items.length + " items to your Kroger cart…";
 
   const { data: { session } } = await supabaseClient.auth.getSession();
@@ -453,12 +514,30 @@ function buildCard(r){
 
   const body = document.createElement("div");
   body.className = "card-body";
-  const ingHtml = r.ingredients.map(i => `<li><span class="box"></span>${escapeHtml(i)}</li>`).join("");
   const stepHtml = r.steps.map(s => `<li>${escapeHtml(s)}</li>`).join("");
   body.innerHTML = `
-    <div class="ingredients"><h3 class="label">Ingredients</h3><ul class="ing-list">${ingHtml}</ul></div>
+    <div class="ingredients"><h3 class="label">Ingredients <span style="text-transform:none;font-weight:400;">— check what you already have</span></h3><ul class="ing-list"></ul></div>
     <div class="steps"><h3 class="label">Instructions</h3><ol class="steps-list">${stepHtml}</ol>${r.note ? `<p class="note">${escapeHtml(r.note)}</p>` : ""}</div>
   `;
+  const ingList = body.querySelector(".ing-list");
+  r.ingredients.forEach((ing, idx) => {
+    const key = r.id + "::" + idx;
+    const li = document.createElement("li");
+    const haveBox = document.createElement("span");
+    haveBox.className = "box" + (haveItems.has(key) ? " checked" : "");
+    if(haveItems.has(key)) haveBox.textContent = "✓";
+    haveBox.style.cursor = "pointer";
+    const label = document.createElement("span");
+    label.textContent = ing;
+    if(haveItems.has(key)) label.style.cssText = "text-decoration:line-through;opacity:.5;";
+    li.appendChild(haveBox);
+    li.appendChild(label);
+    li.addEventListener("click", () => {
+      if(haveItems.has(key)) haveItems.delete(key); else haveItems.add(key);
+      renderAll();
+    });
+    ingList.appendChild(li);
+  });
   card.appendChild(body);
   return card;
 }
@@ -480,13 +559,16 @@ document.getElementById("listBtn").addEventListener("click", () => {
   const chosen = RECIPES.filter(r => picked.has(r.id));
   const shopList = document.getElementById("shopList");
   shopList.innerHTML = "";
-  chosen.forEach(r => {
-    const group = document.createElement("div");
-    group.className = "shop-group";
-    const itemsHtml = r.ingredients.map(i => `<div class="shop-item"><span class="box"></span>${escapeHtml(i)}</div>`).join("");
-    group.innerHTML = `<h4>${escapeHtml(r.title)}</h4>${itemsHtml}`;
-    shopList.appendChild(group);
-  });
+  const merged = mergeIngredients(chosen);
+  const group = document.createElement("div");
+  group.className = "shop-group";
+  const itemsHtml = merged.map(m => {
+    const qtyLabel = m.unit ? `${m.qty} ${m.unit}${m.qty !== 1 ? "s" : ""}` : (m.qty > 1 ? `×${m.qty}` : "");
+    const fromLabel = m.recipeTitles.size > 1 ? ` <span style="opacity:.6;">(${[...m.recipeTitles].join(", ")})</span>` : "";
+    return `<div class="shop-item"><span class="box"></span>${qtyLabel ? `<strong>${escapeHtml(qtyLabel)}</strong> ` : ""}${escapeHtml(m.term)}${fromLabel}</div>`;
+  }).join("");
+  group.innerHTML = `<h4>Combined list (${merged.length} items)</h4>${itemsHtml || "<div style='font-size:13px;'>Nothing left to buy — you've checked off everything!</div>"}`;
+  shopList.appendChild(group);
 
   const linkList = document.getElementById("linkList");
   linkList.innerHTML = "";
