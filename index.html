@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Thankful Mama Co — Meal Planner</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Karla:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --cream:#FAF5EC; --cream-2:#F3EBDA; --sage:#6E7C5A; --sage-dark:#4C5740;
+    --terracotta:#C1673F; --terracotta-dark:#8F4A2C; --charcoal:#3A362E; --line:#DAD0B8;
+    --cart:#639922; --cart-bg:#EAF3DE;
+  }
+  *{box-sizing:border-box;}
+  body{font-family:'Karla',sans-serif;color:var(--charcoal);margin:0;background:#DDD6C4;}
+  .wrap{max-width:900px;margin:0 auto;background:var(--cream);padding:0 32px 60px;}
+  header{text-align:center;padding:40px 0 24px;border-bottom:3px solid var(--sage);margin-bottom:20px;}
+  .eyebrow{font-size:12px;letter-spacing:0.2em;text-transform:uppercase;color:var(--terracotta-dark);font-weight:700;margin:0 0 8px;}
+  h1{font-family:'Fraunces',serif;font-weight:700;font-size:38px;margin:0 0 8px;color:var(--sage-dark);}
+  .subhead{font-size:14px;color:var(--charcoal);opacity:0.75;font-style:italic;}
+
+  .plan-bar{position:sticky;top:0;z-index:50;background:var(--sage-dark);color:var(--cream);padding:12px 20px;margin:0 -32px 30px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .plan-bar .count{font-weight:700;font-family:'Fraunces',serif;}
+  .plan-bar button{background:var(--terracotta);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:'Karla',sans-serif;}
+  .plan-bar button:disabled{background:#8a8578;cursor:not-allowed;}
+  .plan-bar .clear{background:transparent;border:1.5px solid var(--cream);color:var(--cream);}
+
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:28px;}
+  .filter-chip{background:var(--cream-2);border:1.5px solid var(--sage);color:var(--sage-dark);font-size:12px;font-weight:700;padding:6px 14px;border-radius:999px;cursor:pointer;}
+  .filter-chip.active{background:var(--sage);color:var(--cream);}
+
+  section.protein-section{margin-bottom:50px;}
+  .section-head{background:var(--sage);color:var(--cream);padding:10px 20px;border-radius:8px;margin-bottom:20px;}
+  .section-head h2{font-family:'Fraunces',serif;font-size:24px;margin:0;}
+  .section-head p{margin:2px 0 0;font-size:12px;opacity:0.9;}
+
+  .recipe-card{border:1.5px solid var(--sage);border-radius:10px;padding:20px 24px;margin-bottom:22px;background:#FEFCF7;position:relative;transition:box-shadow .15s;}
+  .recipe-card.picked{box-shadow:0 0 0 3px var(--terracotta);}
+  .pick-row{display:flex;align-items:flex-start;gap:12px;}
+  .pick-box{flex:none;width:26px;height:26px;border:2px solid var(--sage);border-radius:6px;margin-top:2px;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--cream);background:#fff;}
+  .pick-box.checked{background:var(--sage);}
+  .card-top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--sage);padding-bottom:10px;margin-bottom:14px;flex-wrap:wrap;gap:8px;flex:1;}
+  .card-title{font-family:'Fraunces',serif;font-weight:600;font-size:20px;color:var(--sage-dark);margin:0 0 4px;}
+  .card-meta{font-size:11px;color:var(--terracotta-dark);}
+  .cart-btn{display:inline-block;background:var(--cart);color:#fff;font-size:11px;font-weight:700;padding:7px 14px;border-radius:6px;text-decoration:none;white-space:nowrap;}
+  .source-badge{display:inline-block;background:var(--cream-2);color:var(--terracotta-dark);font-size:11px;font-weight:700;padding:7px 14px;border-radius:6px;white-space:nowrap;}
+  .card-body{display:flex;gap:28px;flex-wrap:wrap;}
+  .ingredients{flex:1;min-width:200px;}
+  .steps{flex:1.4;min-width:240px;}
+  h3.label{font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:var(--terracotta-dark);border-bottom:1px dotted var(--terracotta);padding-bottom:3px;margin:0 0 8px;}
+  ul.ing-list{list-style:none;margin:0;padding:0;}
+  ul.ing-list li{display:flex;gap:7px;font-size:13px;padding:3px 0;align-items:flex-start;}
+  .box{flex:none;width:10px;height:10px;border:1.3px solid var(--terracotta);margin-top:3px;border-radius:1px;}
+  ol.steps-list{margin:0;padding-left:18px;font-size:13px;}
+  ol.steps-list li{padding:2.5px 0;}
+  .note{font-size:11px;color:var(--terracotta-dark);font-style:italic;margin-top:8px;}
+
+  footer{text-align:center;padding:30px 0 10px;font-size:12px;color:var(--sage-dark);font-style:italic;border-top:1px solid var(--line);margin-top:20px;}
+
+  /* Shopping list overlay */
+  .overlay{position:fixed;inset:0;background:rgba(58,54,46,0.55);display:none;align-items:flex-start;justify-content:center;z-index:100;padding:40px 16px;overflow-y:auto;}
+  .overlay.open{display:flex;}
+  .list-modal{background:var(--cream);border-radius:14px;max-width:640px;width:100%;padding:28px 30px;position:relative;}
+  .list-modal h2{font-family:'Fraunces',serif;color:var(--sage-dark);margin-top:0;}
+  .list-modal .close{position:absolute;top:16px;right:18px;background:none;border:none;font-size:22px;cursor:pointer;color:var(--sage-dark);}
+  .shop-group{margin-bottom:18px;}
+  .shop-group h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 8px;}
+  .shop-item{display:flex;gap:8px;align-items:flex-start;font-size:14px;padding:3px 0;}
+  .recipe-link-row{border-top:2px dashed var(--line);margin-top:20px;padding-top:16px;}
+  .recipe-link-row a{display:block;font-size:13px;color:var(--sage-dark);font-weight:700;text-decoration:none;padding:6px 0;}
+  .kroger-note{background:var(--cream-2);border-radius:8px;padding:14px 16px;font-size:12px;color:var(--terracotta-dark);margin-top:16px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">Thankful Mama Co · Meal Planner</p>
+  <h1>Dinner Recipe Collection</h1>
+  <p class="subhead">Circle what you're making this week, then build your shopping list</p>
+</header>
+
+<div class="plan-bar">
+  <div class="count" id="pickCount">0 recipes picked</div>
+  <div style="display:flex;gap:10px;">
+    <button class="clear" id="clearBtn" type="button">Clear</button>
+    <button id="listBtn" type="button" disabled>Build my shopping list</button>
+  </div>
+</div>
+
+<div class="filters" id="filters"></div>
+
+<div id="sections"></div>
+
+<footer>
+  Thankful Mama Co · Family Meal Planner · Turkey, Seafood, Meatless &amp; Flex-Protein still to come
+</footer>
+
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="list-modal">
+    <button class="close" id="closeOverlay" type="button">&times;</button>
+    <h2>Your shopping list</h2>
+    <p style="font-size:13px;color:var(--charcoal);opacity:.8;">Combined ingredients for everything you picked. Check things off you already have.</p>
+    <div id="shopList"></div>
+    <div class="recipe-link-row">
+      <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--terracotta-dark);margin:0 0 6px;">Or add straight to your Walmart cart, recipe by recipe</h4>
+      <div id="linkList"></div>
+    </div>
+    <div class="kroger-note">Kroger cart sync is coming soon — once it's live, picking recipes here will let you send this whole list straight to your Kroger cart in one tap.</div>
+  </div>
+</div>
+
+<script>
+const RECIPES = [
+{protein:"beef",title:"Easy Meatloaf",meta:"BAKE · Prep 10 min · Cook 45 min",cartUrl:"https://www.walmart.com/i/recipes/Easy-meatloaf/2509247",
+ ingredients:["1 lb 80/20 ground beef chuck","Italian-style bread crumbs","Whole milk (splash)","1 egg","Garlic powder","Light brown sugar","Salt & black pepper","Yellow mustard","Worcestershire sauce","Ketchup (mix + topping)"],
+ steps:["Preheat oven to 350°F.","Mix all ingredients except ketchup topping — don't overmix.","Form into a loaf in a bread loaf pan, cover with foil.","Bake 40 min or until internal temp hits 160°F.","Uncover, spread ketchup on top.","Bake 5 more min uncovered.","Rest 3 min, slice, serve."]},
+{protein:"beef",title:"Sheet Pan Meatloaf & Potatoes",meta:"SHEET PAN · Prep 15 min · Cook 1 hr",cartUrl:"https://www.walmart.com/i/recipes/Easy-Sheet-Pan-Meatloaf-and-Potatoes/2702956",
+ ingredients:["1 lb 93/7 lean ground beef","8 oz tomato sauce (divided)","Italian bread crumbs","1 yellow onion, diced","1 egg","Worcestershire sauce","Dried thyme, salt & pepper","3 lb bag red potatoes","Garlic salt, brown sugar, stone ground mustard"],
+ steps:["Preheat oven 400°F. Reserve 1/4 cup tomato sauce.","Mix beef, remaining sauce, bread crumbs, onion, egg, Worcestershire, thyme, salt, pepper. Shape into a loaf on a parchment-lined pan.","Toss potatoes with oil, garlic salt, pepper. Spread around meatloaf.","Bake 40 min. Mix reserved sauce with brown sugar + mustard.","Spread sauce on meatloaf, stir potatoes, bake 20 more min to 160°F.","Rest 10 min, slice, serve with potatoes."]},
+{protein:"beef",title:"Sheet Pan Steak & Peppers",meta:"SHEET PAN · Prep 20 min · Cook 18 min",cartUrl:"https://www.walmart.com/i/recipes/Sheet-Pan-Steak-and-Peppers/2630901",
+ ingredients:["Skirt steak (~1.3 lb)","1 green bell pepper, sliced","1 red onion, sliced","1 lime, 1 orange (juiced)","Olive oil","Chili powder, smoked paprika, garlic powder, cumin, oregano","Salt & pepper","Corn tortillas, lemon wedges"],
+ steps:["Preheat oven 425°F. Line sheet pan with parchment.","Whisk lime/orange juice, oil, and spices for marinade.","Marinate steak in half the marinade 15 min.","Toss peppers & onion with remaining oil + marinade half. Arrange on pan with space for steak in center.","Roast 15–18 min to desired doneness.","Rest steak 5–7 min under foil. Warm tortillas.","Slice against the grain, return to pan with veggies. Serve with tortillas and lime."]},
+{protein:"beef",title:"American Goulash (\"Villager Stew\")",meta:"STOVETOP / DUTCH OVEN · Cook 40 min",cartUrl:"https://www.walmart.com/i/recipes/American-goulash/839106",
+ ingredients:["2 lb ground beef","1 yellow onion, diced","3 cloves garlic, minced","2 cans Italian diced tomatoes","2 cans tomato sauce","3 cups water","Worcestershire sauce, Italian seasoning, salt","1 box elbow macaroni"],
+ steps:["Brown beef in a Dutch oven. Drain grease.","Add onion + garlic, cook 3 min.","Add tomatoes, sauce, water, Worcestershire, seasoning, salt, macaroni. Boil.","Reduce to medium-low, cover, simmer 25–30 min until pasta is cooked.","Serve immediately."],
+ note:"Named \"Villager Stew\" for the family's Minecraft-loving son. Genuinely stovetop, not crockpot, as written."},
+{protein:"beef",title:"Cowboy Stew",meta:"CROCKPOT · Brown 20 min + Slow Cook 6–8 hrs (low)",source:"Amanda's recipe (keytomylime.com)",
+ ingredients:["8 slices bacon, cut 1/4\"","1 (12 oz) pack kielbasa, sliced & halved","1 yellow onion, diced","2 lb lean ground beef","3 cloves garlic, minced","Chili powder, cumin, parsley, salt, pepper","1/4 cup flour","1 (14.5oz) can diced tomatoes","1 (10oz) can mild Ro-Tel","1 (16oz) can pork & beans","1 (8.75oz) can corn, drained","1.5 lb russet potatoes, cubed","1 cup beef broth","Green onions, garnish"],
+ steps:["Cook bacon in a skillet until crispy (8–10 min). Transfer to crockpot.","Cook kielbasa & onion in drippings ~7 min. Transfer to crockpot.","Cook ground beef until no pink (~7 min). Drain grease.","Add garlic + seasonings to beef, cook 1 min, sprinkle flour, mix. Transfer to crockpot.","Add tomatoes, Ro-Tel, pork & beans, potatoes, corn, broth. Stir.","Cover, cook LOW 6–8 hrs or HIGH 3–4 hrs until potatoes are tender.","Serve topped with green onions."]},
+{protein:"beef",title:"Texas Rice",meta:"STOVETOP + BROIL · ~45 min total",source:"Amanda's recipe (Allrecipes)",
+ ingredients:["2 cups long-grain white rice","3 cups water","6 slices bacon","1.5 lb ground beef","1 onion, chopped","1/2 green bell pepper, chopped","1 (28oz) can diced tomatoes","Salt & pepper","1.5 cups shredded cheddar"],
+ steps:["Cook rice in water: boil, reduce to low, cover, simmer 20 min.","Crisp bacon in a skillet. Remove, crumble, keep drippings.","Cook beef, onion, pepper in drippings until browned & softened.","Stir in rice, diced tomatoes, salt, pepper, bacon.","Transfer to baking dish, top with cheddar, broil until melted & bubbly."]},
+{protein:"beef",title:"Cheesy French Onion Pull-Apart Sliders",meta:"BAKE · Cook ~1 hr 20 min",cartUrl:"https://www.walmart.com/i/recipes/Cheesy-french-onion-pull-apart-sliders/826749",
+ ingredients:["Unsalted butter (2 + 6 Tbsp)","2 sweet onions","Salt & pepper","1 tsp balsamic vinegar","2 lb 80/20 ground beef","2 packets onion soup mix","Onion powder, garlic powder, thyme","Worcestershire sauce","24 Hawaiian slider buns","8 oz sliced provolone"],
+ steps:["Melt 2 Tbsp butter, cook onions with salt/pepper 7 min until translucent.","Reduce heat, cook 30 min until caramelized. Stir in balsamic.","Mix beef with soup mix, onion/garlic powder, thyme, Worcestershire, salt, pepper.","Brown beef mixture in the skillet, drain grease.","Preheat oven 350°F. Melt remaining butter.","Slice buns in half, place bottoms on a sheet pan, brush with butter.","Spread onion-beef mixture on buns, layer provolone.","Add top buns, brush with butter. Bake 20 min until melted & golden."]},
+{protein:"beef",title:"Smoky Ground Beef Freezer Base",meta:"FREEZER · Prep 15 min · Cook 12 min",cartUrl:"https://www.walmart.com/i/recipes/Smoky-Ground-Beef-Freezer-Base/2639750",
+ ingredients:["1 lb 93/7 lean ground beef","1 onion, diced","1 red bell pepper, diced","1 orange bell pepper, diced","Garlic, minced","Smoked paprika, oregano","Salt & pepper","Olive oil"],
+ steps:["Sauté onion & peppers in oil 5–7 min until soft.","Add garlic, paprika, oregano, salt, pepper, sauté 1 min.","Add beef, brown 8–10 min to 160°F. Drain fat.","Serve now in tacos/pasta/bowls, or cool, portion into 1-lb freezer bags, freeze up to 3 months."]},
+{protein:"beef",title:"Classic Philly Cheesesteak",meta:"STOVETOP · Prep 15 min · Cook 20 min",cartUrl:"https://www.walmart.com/i/recipes/Classic-Philly-Cheesesteak/2620246",
+ ingredients:["Shaved ribeye steak","Hoagie rolls","1 onion, sliced","1 green bell pepper, sliced","Sliced provolone","Butter, salt, pepper, garlic powder"],
+ steps:["Sauté onions and peppers in butter 8–10 min until soft.","Add remaining butter and shaved steak, season, cook quickly.","Mix in onions/peppers, divide into piles, top with provolone until melted.","Toast rolls, load with meat and cheese. Serve warm."]},
+{protein:"beef",title:"Taco Crunch Wrap",meta:"STOVETOP · Prep 15 min · Cook 15 min",cartUrl:"https://www.walmart.com/i/recipes/Taco-crunch-wrap/2610650",
+ ingredients:["1 packet taco seasoning","1 lb ground beef","8 large flour tortillas","Shredded 4-cheese blend","Shredded lettuce, diced tomato, sour cream","Vegetable oil, corn tortilla chips"],
+ steps:["Brown beef, drain. Add taco seasoning + water, simmer 5 min.","Layer meat, cheese, chips, lettuce, tomato, sour cream in center of tortilla. Fold edges to enclose. Repeat.","Cook folded-side down in oil, 1–2 min per side until crispy.","Cut in half, serve with salsa/guac."]},
+
+{protein:"pork",title:"Perfect Pork Chops",meta:"BAKE",cartUrl:"https://www.walmart.com/i/recipes/Perfect-pork-chops/1995047",
+ ingredients:["Bone-in pork chops","Olive oil","Garlic powder, onion powder, paprika, thyme","Salt & pepper"],
+ steps:["Preheat oven. Sear chops in a hot oiled skillet 2–3 min per side.","Season with spice blend.","Finish in oven until internal temp hits 145°F. Rest 5 min before serving."]},
+{protein:"pork",title:"Easy Smothered Pork Chops",meta:"SHEET PAN",cartUrl:"https://www.walmart.com/i/recipes/Easy-smothered-pork-chops/834948",
+ ingredients:["Pork chops","Baby potatoes","Lemon, capers","Olive oil, garlic, seasoning"],
+ steps:["Arrange chops and potatoes on a sheet pan.","Drizzle with oil, lemon-caper sauce, season.","Roast until chops reach 145°F and potatoes are tender."]},
+{protein:"pork",title:"Pork Chop Sandwich",meta:"STOVETOP (fried)",cartUrl:"https://www.walmart.com/i/recipes/Pork-chop-sandwich/816981",
+ ingredients:["Thin pork chops","Flour, egg, breadcrumbs","Sandwich buns","Toppings: pickles, mustard, lettuce"],
+ steps:["Bread chops: flour, egg wash, breadcrumbs.","Fry until golden and cooked through, 145°F internal.","Build sandwiches with toppings of choice."]},
+{protein:"pork",title:"Sheet Pan Herb Roasted Pork & Sweet Potatoes",meta:"SHEET PAN",cartUrl:"https://www.walmart.com/i/recipes/Sheet-pan-herb-roasted-pork-and-sweet-potatoes/1766302",
+ ingredients:["Pork tenderloin","Sweet potatoes, cubed","Olive oil, fresh herbs","Salt & pepper"],
+ steps:["Toss sweet potatoes with oil, herbs, salt, pepper on a sheet pan.","Season pork, nestle among potatoes.","Roast until pork hits 145°F and potatoes are tender."]},
+{protein:"pork",title:"Slow Cooker Pork Roast with Vegetables",meta:"CROCKPOT",cartUrl:"https://www.walmart.com/i/recipes/Slow-Cooker-Pork-Roast-with-Vegetables/2689110",
+ ingredients:["Pork shoulder or loin roast","Baby carrots, potatoes","Onion, garlic","Broth, seasoning"],
+ steps:["Place vegetables in crockpot, season roast, nestle on top.","Add broth. Cover, cook LOW 7–8 hrs until fork-tender.","Shred or slice, serve with vegetables."]},
+{protein:"pork",title:"Bratwurst Dinner",meta:"STOVETOP / GRILL · Easy assembly meal",source:"Amanda's recipe",
+ ingredients:["Johnsonville Beddar with Cheddar Brats","Boxed or homemade mac & cheese","Veggie side #1","Veggie side #2","Buns (optional)"],
+ steps:["Cook brats on stovetop or grill until internal temp hits 160°F.","Make mac & cheese and prep two veggie sides while brats cook.","Everything lands together in ~20–25 min."]},
+{protein:"pork",title:"Low Country Boil",meta:"SHEET PAN · Serves 6 · Bake 12–15 min",source:"Amanda's recipe (Damn Delicious)",
+ ingredients:["1 lb baby Dutch yellow potatoes","3 ears corn, cut into 6 pieces each","1/4 cup butter, melted","4 cloves garlic, minced","1 Tbsp Old Bay","1 lb medium shrimp, peeled/deveined","1 (12.8oz) pkg smoked andouille sausage, sliced","1 lemon, parsley"],
+ steps:["Preheat oven 400°F, oil a sheet pan.","Boil potatoes 10–13 min, add corn last 5 min, drain.","Mix melted butter, garlic, Old Bay.","Spread potatoes, corn, shrimp, sausage on pan. Toss with butter mixture.","Bake 12–15 min until shrimp is opaque.","Serve with lemon wedges and parsley."]},
+
+{protein:"chicken",title:"Slow Cooker Chicken Curry Stew",meta:"CROCKPOT · 3 hrs high / 6 hrs low",cartUrl:"https://www.walmart.com/i/recipes/Slow-Cooker-Chicken-Curry-Stew/2693016",
+ ingredients:["Chicken thighs, diced","Onion, garlic, ginger","Curry powder","Chicken broth, diced tomatoes","Carrots, red bell pepper","Coconut milk, spinach, cilantro"],
+ steps:["Add chicken, onion, garlic, ginger to crockpot.","Add curry powder, broth, tomatoes, carrots, salt, pepper.","Cook HIGH 3 hrs / LOW 6 hrs.","Last 30 min stir in pepper + coconut milk.","Stir in spinach before serving. Garnish with cilantro."]},
+{protein:"chicken",title:"Slow Cooker Chicken & Black Bean",meta:"CROCKPOT · 5–6 hrs low",cartUrl:"https://www.walmart.com/i/recipes/Slow-Cooker-Chicken-and-Black-Bean/2672887",
+ ingredients:["Chicken breasts","Onion, red bell pepper, garlic","Broth, fire-roasted tomatoes w/ chiles","Black beans","Smoked paprika, chipotle in adobo, cumin, oregano","Cheddar, cilantro"],
+ steps:["Add veggies to crockpot, top with chicken.","Pour in broth + tomatoes. Stir in beans + seasonings.","Cook LOW 5–6 hrs until chicken shreds easily.","Shred chicken, return to pot, stir. Top with cheese + cilantro."]},
+{protein:"chicken",title:"Chicken & Vegetable Pot Pie w/ Biscuits",meta:"CROCKPOT + BAKE FINISH · 6.5 hrs total",cartUrl:"https://www.walmart.com/i/recipes/Slow-Cooker-Chicken-and-Vegetable-Pot-Pie-with-Biscuits/2688531",
+ ingredients:["Chicken thighs","Cream of mushroom soup, broth","Potatoes, carrots, celery, onion, garlic","Thyme, salt, pepper","Frozen peas","Refrigerated biscuit dough"],
+ steps:["Combine chicken, soup, broth, veggies, seasoning in crockpot. Cook LOW 6 hrs.","Stir in peas, cook 20–30 more min.","Transfer to baking dish, top with biscuits.","Bake ~375°F for 12–15 min until biscuits are golden."]},
+{protein:"chicken",title:"Chicken & Cheese Enchiladas",meta:"FREEZER / BAKE · Prep 15 min · Cook 20 min",cartUrl:"https://www.walmart.com/i/recipes/Chicken-and-cheese-enchiladas/2611108",
+ ingredients:["16 oz jar picante sauce","10.5 oz can nacho cheese sauce","10ct flour tortillas","Cumin","16 oz rotisserie shredded chicken","Cilantro, green onion"],
+ steps:["Heat oven 375°F. Spread picante sauce in a greased dish.","Mix picante, nacho cheese sauce, chicken, cumin.","Roll into tortillas, place seam-down. Pour remaining cheese sauce over, cover.","Bake 20 min. Top with remaining picante, cilantro, green onion."],
+ note:"Freezer tip: assemble through rolling step, freeze before baking. Thaw fully, then bake."},
+{protein:"chicken",title:"Mediterranean Chicken Sheet Pan",meta:"SHEET PAN · Cook 40 min",cartUrl:"https://www.walmart.com/i/recipes/Mediterranean-Inspired-chicken-sheet-pan-dinner/835891",
+ ingredients:["Chicken breasts","Roasted red pepper slices","Frozen garlic herb baby potatoes","Cherry tomatoes, lemons","Za'atar/Greek seasoning, olive oil, garlic/onion powder","Fresh dill"],
+ steps:["Line sheet pan, spread chicken, potatoes, peppers, tomatoes.","Drizzle oil + lemon juice, sprinkle seasoning, toss.","Bake 40 min until chicken done, potatoes tender.","Garnish with dill."]},
+{protein:"chicken",title:"Chicken Sausage Sheet Pan (4-ingredient)",meta:"SHEET PAN · Cook 30 min",cartUrl:"https://www.walmart.com/i/recipes/Chicken-sausage-sheet-pan-dinner/846993",
+ ingredients:["Chicken apple sausage links (4ct)","Frozen broccoli florets","1 sweet potato, cubed","Olive oil, salt, pepper"],
+ steps:["Preheat oven 425°F, line sheet pan.","Slice sausage, cube sweet potato, cut broccoli into florets.","Place on pan, drizzle oil, season.","Roast 30 min until browned and tender."]},
+{protein:"chicken",title:"Sheet Pan BBQ Chicken Nachos",meta:"SHEET PAN · Prep 20 min · Cook 15 min",cartUrl:"https://www.walmart.com/i/recipes/Sheet-pan-BBQ-chicken-nachos/845699",
+ ingredients:["Wavy potato chips","Rotisserie chicken","Shredded cheddar","BBQ sauce","Pickled jalapeño slices"],
+ steps:["Preheat oven 350°F, line sheet pan.","Spread chips, top with chicken.","Drizzle BBQ sauce, sprinkle cheddar, scatter jalapeños.","Bake 15 min. Serve warm."]},
+{protein:"chicken",title:"Sheet Pan Chicken Parmesan",meta:"SHEET PAN · Prep 10 min · Cook 20 min",cartUrl:"https://www.walmart.com/i/recipes/Sheet-Pan-Chicken-Parmesan/2579586",
+ ingredients:["Panko breadcrumbs, parmesan, olive oil","Thin-sliced chicken breasts","Prego pasta sauce, mozzarella","1 head cauliflower"],
+ steps:["Heat oven 425°F. Mix panko, parmesan, oil.","Place chicken on sheet pan, brush with oil, season.","Top with sauce, mozzarella, panko mix.","Add cauliflower to the other side, drizzle oil, season.","Bake 20 min until chicken is done."]},
+{protein:"chicken",title:"Sheet Pan Chicken & Pineapple",meta:"SHEET PAN · Prep 15 min · Cook 25 min",cartUrl:"https://www.walmart.com/i/recipes/Sheet-Pan-Chicken-and-Pineapple/2630848",
+ ingredients:["Chicken thighs, cubed","Fresh pineapple, cubed","Red & yellow bell pepper, red onion","Soy sauce, honey, rice vinegar","Ginger, garlic powder, corn starch","Cilantro"],
+ steps:["Preheat oven 375°F. Whisk glaze ingredients.","Arrange chicken, pineapple, veggies on pan. Season.","Pour 2/3 glaze over, toss, spread evenly.","Roast 20–25 min to 165°F.","Warm remaining glaze, drizzle over finished dish. Garnish with cilantro."]},
+{protein:"chicken",title:"King Ranch Chicken Bake",meta:"BAKE · Prep 20 min · Cook 30–35 min",cartUrl:"https://www.walmart.com/i/recipes/King-Ranch-Chicken-Bake/2580801",
+ ingredients:["Bell pepper, onion, paprika","Cream of chicken soup","Picante sauce, cilantro jalapeño lime sauce, sour cream","Shredded BBQ chicken","Corn tortillas, cheddar, green onions"],
+ steps:["Preheat oven 350°F, grease dish.","Cook bell pepper, onion, paprika 5 min.","Mix soup, picante, cilantro lime sauce, sour cream, chicken, veggies.","Layer tortillas, chicken mix, cheese x3, ending with cheese.","Bake 30–35 min until bubbly. Top with scallions."]},
+{protein:"chicken",title:"Chicken Casserole with Crispy Noodle Topping",meta:"BAKE · Prep 15 min · Cook 35 min",cartUrl:"https://www.walmart.com/i/recipes/Chicken-Casserole-with-Crispy-Noodle-Topping/2682536",
+ ingredients:["Cooked grilled chicken strips","Onion, celery, shredded carrots","Butter, flour, chicken broth, heavy cream","Soy sauce, garlic powder, thyme","Water chestnuts","Crispy chow mein noodles"],
+ steps:["Preheat oven 375°F, grease dish.","Sauté onion, celery, carrots 5–7 min.","Stir in flour, whisk in broth, cream, soy sauce, seasoning. Simmer to thicken.","Fold in chicken + water chestnuts. Pour into dish.","Top with chow mein noodles. Bake 30–35 min.","Rest 5 min, garnish with green onions."]},
+{protein:"chicken",title:"Baked Cornflake Chicken Tenders",meta:"BAKE · Prep 25 min · Cook 20 min",cartUrl:"https://www.walmart.com/i/recipes/Baked-Cornflake-Chicken-Tenders/2615184",
+ ingredients:["Chicken breasts, cut into strips","Corn flakes cereal","Smoked paprika, garlic/onion powder, cayenne (opt.)","Buttermilk, flour"],
+ steps:["Preheat oven 375°F, line pan.","Marinate chicken strips in buttermilk 15–30 min.","Crush corn flakes into crumbs. Mix flour + spices in separate dish.","Dredge chicken in flour mix, press into corn flakes.","Arrange on pan, spray tops. Bake 18–22 min, flip halfway, to 165°F.","Freezer tip: cool completely, freeze in single layer, then bag."]}
+];
+
+const PROTEIN_LABELS = {beef:"🐄 Beef", pork:"🐷 Pork", chicken:"🐔 Chicken"};
+RECIPES.forEach((r,i) => { r.id = "r" + i; });
+
+let activeFilter = "all";
+const picked = new Set();
+
+function escapeHtml(s){
+  const d = document.createElement("div");
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function renderFilters(){
+  const proteins = ["all", ...new Set(RECIPES.map(r => r.protein))];
+  const el = document.getElementById("filters");
+  el.innerHTML = "";
+  proteins.forEach(p => {
+    const chip = document.createElement("button");
+    chip.className = "filter-chip" + (activeFilter === p ? " active" : "");
+    chip.textContent = p === "all" ? "All" : PROTEIN_LABELS[p] || p;
+    chip.addEventListener("click", () => { activeFilter = p; renderAll(); });
+    el.appendChild(chip);
+  });
+}
+
+function renderSections(){
+  const container = document.getElementById("sections");
+  container.innerHTML = "";
+  const proteins = [...new Set(RECIPES.map(r => r.protein))].filter(p => activeFilter === "all" || activeFilter === p);
+  proteins.forEach(protein => {
+    const recipes = RECIPES.filter(r => r.protein === protein);
+    const section = document.createElement("section");
+    section.className = "protein-section";
+    section.innerHTML = `<div class="section-head"><h2>${PROTEIN_LABELS[protein] || protein}</h2><p>${recipes.length} recipes</p></div>`;
+    recipes.forEach(r => section.appendChild(buildCard(r)));
+    container.appendChild(section);
+  });
+}
+
+function buildCard(r){
+  const card = document.createElement("div");
+  card.className = "recipe-card" + (picked.has(r.id) ? " picked" : "");
+
+  const pickRow = document.createElement("div");
+  pickRow.className = "pick-row";
+
+  const box = document.createElement("div");
+  box.className = "pick-box" + (picked.has(r.id) ? " checked" : "");
+  box.textContent = picked.has(r.id) ? "✓" : "";
+  box.addEventListener("click", () => {
+    if(picked.has(r.id)) picked.delete(r.id); else picked.add(r.id);
+    renderAll();
+  });
+
+  const top = document.createElement("div");
+  top.className = "card-top";
+  const actionHtml = r.cartUrl
+    ? `<a class="cart-btn" href="${r.cartUrl}" target="_blank" rel="noopener">Add to Walmart cart →</a>`
+    : `<span class="source-badge">${escapeHtml(r.source)}</span>`;
+  top.innerHTML = `<div><p class="card-title">${escapeHtml(r.title)}</p><p class="card-meta">${escapeHtml(r.meta)}</p></div>${actionHtml}`;
+
+  pickRow.appendChild(box);
+  pickRow.appendChild(top);
+  card.appendChild(pickRow);
+
+  const body = document.createElement("div");
+  body.className = "card-body";
+  const ingHtml = r.ingredients.map(i => `<li><span class="box"></span>${escapeHtml(i)}</li>`).join("");
+  const stepHtml = r.steps.map(s => `<li>${escapeHtml(s)}</li>`).join("");
+  body.innerHTML = `
+    <div class="ingredients"><h3 class="label">Ingredients</h3><ul class="ing-list">${ingHtml}</ul></div>
+    <div class="steps"><h3 class="label">Instructions</h3><ol class="steps-list">${stepHtml}</ol>${r.note ? `<p class="note">${escapeHtml(r.note)}</p>` : ""}</div>
+  `;
+  card.appendChild(body);
+  return card;
+}
+
+function renderPlanBar(){
+  document.getElementById("pickCount").textContent = picked.size + (picked.size === 1 ? " recipe picked" : " recipes picked");
+  document.getElementById("listBtn").disabled = picked.size === 0;
+}
+
+function renderAll(){
+  renderFilters();
+  renderSections();
+  renderPlanBar();
+}
+
+document.getElementById("clearBtn").addEventListener("click", () => { picked.clear(); renderAll(); });
+
+document.getElementById("listBtn").addEventListener("click", () => {
+  const chosen = RECIPES.filter(r => picked.has(r.id));
+  const shopList = document.getElementById("shopList");
+  shopList.innerHTML = "";
+  chosen.forEach(r => {
+    const group = document.createElement("div");
+    group.className = "shop-group";
+    const itemsHtml = r.ingredients.map(i => `<div class="shop-item"><span class="box"></span>${escapeHtml(i)}</div>`).join("");
+    group.innerHTML = `<h4>${escapeHtml(r.title)}</h4>${itemsHtml}`;
+    shopList.appendChild(group);
+  });
+
+  const linkList = document.getElementById("linkList");
+  linkList.innerHTML = "";
+  chosen.forEach(r => {
+    if(r.cartUrl){
+      const a = document.createElement("a");
+      a.href = r.cartUrl;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.textContent = "🛒 " + r.title + " — Walmart";
+      linkList.appendChild(a);
+    }
+  });
+
+  document.getElementById("overlay").classList.add("open");
+});
+
+document.getElementById("closeOverlay").addEventListener("click", () => {
+  document.getElementById("overlay").classList.remove("open");
+});
+document.getElementById("overlay").addEventListener("click", (e) => {
+  if(e.target.id === "overlay") document.getElementById("overlay").classList.remove("open");
+});
+
+renderAll();
+</script>
+</body>
+</html>
