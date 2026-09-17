@@ -184,19 +184,30 @@ Deno.serve(async (req) => {
     const nonOrganic = candidates.filter((p: any) => !/organic/i.test(p.description));
     let pool = nonOrganic.length ? nonOrganic : candidates;
 
-    // A few staples are conventionally bought in one standard household
-    // size regardless of how little a recipe actually uses (a "splash" of
-    // milk still means a real jug of milk, not the smallest carton on the
-    // shelf) — prefer that size when the store carries it.
-    const PREFERRED_SIZE_HINTS: [RegExp, RegExp][] = [
-      [/\bmilk\b/i, /gallon/i],
-    ];
-    for (const [termHint, sizeHint] of PREFERRED_SIZE_HINTS) {
-      if (termHint.test(term)) {
-        const preferred = pool.filter((p: any) => sizeHint.test(p.items?.[0]?.size || ""));
-        if (preferred.length) pool = preferred;
-        break;
-      }
+    // Milk is conventionally bought as a half gallon or a full gallon
+    // regardless of how little a recipe actually uses — nobody buys a
+    // single-serving carton for a "splash" in a meatloaf. A splash, or an
+    // amount under a cup (tsp/tbsp/oz), calls for a half gallon; a cup or
+    // more calls for a full gallon.
+    if (/\bmilk\b/i.test(term)) {
+      const isHalfGallon = (size: string) => {
+        const s = size.toLowerCase();
+        return s.includes("half gallon") || /\b0\.5\s*gal\b/.test(s) || /\b64\s*fl/.test(s);
+      };
+      const isGallon = (size: string) => {
+        const s = size.toLowerCase();
+        return (/\bgal\b/.test(s) && !s.includes("half")) || /\b128\s*fl/.test(s);
+      };
+      const wantsGallon = unit === "cup";
+      const match = pool.filter((p: any) => {
+        const size = (p.items?.[0]?.size || "").toLowerCase();
+        return wantsGallon ? isGallon(size) : isHalfGallon(size);
+      });
+      const fallback = wantsGallon
+        ? pool.filter((p: any) => isHalfGallon((p.items?.[0]?.size || "").toLowerCase()))
+        : pool.filter((p: any) => isGallon((p.items?.[0]?.size || "").toLowerCase()));
+      if (match.length) pool = match;
+      else if (fallback.length) pool = fallback;
     }
 
     pool.sort((a: any, b: any) => a.items[0].price.regular - b.items[0].price.regular);
