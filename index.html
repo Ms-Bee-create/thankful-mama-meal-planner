@@ -139,6 +139,15 @@
 </div>
 
 <div class="filters" id="filters"></div>
+<div class="filters" id="methodFilters"></div>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">
+  <label for="sortSelect" style="font-size:12px;font-weight:700;color:var(--terracotta-dark);">Sort by:</label>
+  <select id="sortSelect" style="padding:6px 10px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;background:#fff;">
+    <option value="default">Default order</option>
+    <option value="quick">Quickest total time first</option>
+    <option value="long">Longest total time first</option>
+  </select>
+</div>
 
 <div id="sections"></div>
 
@@ -360,7 +369,42 @@ const RECIPES = [
 ];
 
 const PROTEIN_LABELS = {beef:"🐄 Beef", pork:"🐷 Pork", chicken:"🐔 Chicken", turkey:"🦃 Turkey", seafood:"🐟 Seafood", meatless:"🥦 Meatless", flex:"🔀 Flex-Protein"};
-RECIPES.forEach((r,i) => { r.id = "r" + i; });
+// Recipe "meta" strings (e.g. "SHEET PAN · Prep 15 min · Cook 1 hr") already
+// carry cooking method and timing — parsed here instead of adding new
+// fields, so existing and custom recipes both get sort/filter support
+// automatically. Method text before the first "·" often names more than
+// one method ("CROCKPOT + BAKE FINISH", "STOVETOP / GRILL"), so a recipe
+// can match multiple method filters rather than only its first word.
+const METHOD_KEYWORDS = ["crockpot","sheet pan","bake","stovetop","freezer","grill"];
+function detectMethods(meta){
+  const firstSeg = (meta || "").split("·")[0].toLowerCase();
+  const found = METHOD_KEYWORDS.filter(k => firstSeg.includes(k));
+  return found.length ? found : ["other"];
+}
+// Rough total-time estimate for sorting, not a precise calculator — sums
+// every "N hr(s)" and "N min" found anywhere in the meta string (a range
+// like "6–8 hrs" counts its higher end). Good enough to sort quick vs.
+// long recipes; returns null when meta has no time info at all ("BAKE"
+// alone), which sorts to the end regardless of direction.
+function estimateMinutes(meta){
+  if(!meta) return null;
+  let total = 0, found = false;
+  [...meta.matchAll(/(\d+)(?:[–-](\d+))?\s*hrs?\b/gi)].forEach(m => {
+    total += (m[2] ? parseInt(m[2],10) : parseInt(m[1],10)) * 60;
+    found = true;
+  });
+  [...meta.matchAll(/(\d+)(?:[–-](\d+))?\s*min\b/gi)].forEach(m => {
+    total += (m[2] ? parseInt(m[2],10) : parseInt(m[1],10));
+    found = true;
+  });
+  return found ? total : null;
+}
+function tagRecipeMethodAndTime(r){
+  r.methods = detectMethods(r.meta);
+  r.totalMinutes = estimateMinutes(r.meta);
+}
+
+RECIPES.forEach((r,i) => { r.id = "r" + i; tagRecipeMethodAndTime(r); });
 
 const SUPABASE_URL = "https://idpytmlnhkikoavakyiw.supabase.co";
 const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImlkcHl0bWxuaGtpa29hdmFreWl3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODk2NjI5MjEsImV4cCI6MjEwNTIzODkyMX0.X4s4pg8KMprtbwgIPO7rLVzLat8wzEtrh3_DvWw30sM";
@@ -368,6 +412,8 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_
 let userId = null;
 
 let activeFilter = "all";
+let activeMethodFilter = "all";
+let sortMode = "default"; // "default" | "quick" | "long"
 const picked = new Set();
 const haveItems = new Set(); // ingredients the user already has on hand — session only, not persisted
 
@@ -409,7 +455,7 @@ async function initUser(){
     const { data: customRows } = await supabaseClient.from("custom_recipes").select("*").eq("user_id", userId);
     if(customRows){
       customRows.forEach(row => {
-        RECIPES.push({
+        const r = {
           id: row.id,
           protein: row.protein,
           title: row.title,
@@ -418,7 +464,9 @@ async function initUser(){
           ingredients: row.ingredients || [],
           steps: row.steps || [],
           isCustom: true
-        });
+        };
+        tagRecipeMethodAndTime(r);
+        RECIPES.push(r);
       });
     }
 
@@ -815,12 +863,38 @@ function renderFilters(){
   });
 }
 
+const METHOD_LABELS = { crockpot: "🍲 Crockpot", "sheet pan": "🍪 Sheet Pan", bake: "🔥 Bake", stovetop: "🍳 Stovetop", freezer: "❄️ Freezer", grill: "🔥 Grill", other: "Other" };
+function renderMethodFilters(){
+  const methods = ["all", ...new Set(RECIPES.flatMap(r => r.methods))];
+  const el = document.getElementById("methodFilters");
+  el.innerHTML = "";
+  methods.forEach(m => {
+    const chip = document.createElement("button");
+    chip.className = "filter-chip" + (activeMethodFilter === m ? " active" : "");
+    chip.textContent = m === "all" ? "Any method" : METHOD_LABELS[m] || m;
+    chip.addEventListener("click", () => { activeMethodFilter = m; renderAll(); });
+    el.appendChild(chip);
+  });
+}
+
 function renderSections(){
   const container = document.getElementById("sections");
   container.innerHTML = "";
-  const proteins = [...new Set(RECIPES.map(r => r.protein))].filter(p => activeFilter === "all" || activeFilter === p);
+  const visible = r =>
+    (activeFilter === "all" || r.protein === activeFilter) &&
+    (activeMethodFilter === "all" || r.methods.includes(activeMethodFilter));
+  const proteins = [...new Set(RECIPES.filter(visible).map(r => r.protein))];
   proteins.forEach(protein => {
-    const recipes = RECIPES.filter(r => r.protein === protein);
+    const recipes = RECIPES.filter(r => r.protein === protein && visible(r));
+    if(sortMode !== "default"){
+      // Recipes with no parseable time (null totalMinutes) sort to the end
+      // either way — there's nothing to compare them by.
+      recipes.sort((a, b) => {
+        if(a.totalMinutes == null) return 1;
+        if(b.totalMinutes == null) return -1;
+        return sortMode === "quick" ? a.totalMinutes - b.totalMinutes : b.totalMinutes - a.totalMinutes;
+      });
+    }
     const section = document.createElement("section");
     section.className = "protein-section";
     section.innerHTML = `<div class="section-head"><h2>${PROTEIN_LABELS[protein] || protein}</h2><p>${recipes.length} recipes</p></div>`;
@@ -906,9 +980,12 @@ function renderPlanBar(){
 
 function renderAll(){
   renderFilters();
+  renderMethodFilters();
   renderSections();
   renderPlanBar();
 }
+
+document.getElementById("sortSelect").addEventListener("change", (e) => { sortMode = e.target.value; renderAll(); });
 
 document.getElementById("clearBtn").addEventListener("click", () => { picked.clear(); renderAll(); savePlan(); });
 
@@ -1187,10 +1264,12 @@ document.getElementById("saveRecipeBtn").addEventListener("click", async () => {
     return;
   }
 
-  RECIPES.push({
+  const newRecipe = {
     id: data.id, protein, title, meta: meta || "Your recipe", source: "Your recipe",
     ingredients, steps, isCustom: true
-  });
+  };
+  tagRecipeMethodAndTime(newRecipe);
+  RECIPES.push(newRecipe);
 
   ["pasteBox","newRecipeTitle","newRecipeMeta","newRecipeIngredients","newRecipeSteps"].forEach(id => document.getElementById(id).value = "");
   statusEl.textContent = "Saved! Find it under " + (PROTEIN_LABELS[protein] || protein) + ".";
