@@ -124,7 +124,7 @@
 
 <header>
   <p class="eyebrow">Thankful Mama Co · Meal Planner</p>
-  <h1>Dinner Recipe Collection</h1>
+  <h1>Recipe Collection</h1>
   <p class="subhead">Circle what you're making this week, then build your shopping list</p>
   <button id="krogerBtn" type="button" style="margin-top:14px;background:var(--sage);color:#fff;border:none;padding:8px 16px;border-radius:8px;font-weight:700;font-size:12px;cursor:pointer;font-family:'Karla',sans-serif;">Connect Kroger account</button>
 </header>
@@ -138,6 +138,7 @@
   </div>
 </div>
 
+<div class="filters" id="mealTypeFilters" style="margin-bottom:16px;"></div>
 <div class="filters" id="filters"></div>
 <div class="filters" id="methodFilters"></div>
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:20px;">
@@ -152,7 +153,7 @@
 <div id="sections"></div>
 
 <footer>
-  Thankful Mama Co · Family Meal Planner · Breakfast, Lunch &amp; Snacks still to come
+  Thankful Mama Co · Family Meal Planner
 </footer>
 
 </div>
@@ -193,7 +194,15 @@
     <textarea id="pasteBox" rows="6" placeholder="Paste a whole recipe here — title, ingredients, instructions, however it's formatted." style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></textarea>
     <button id="parseRecipeBtn" type="button" style="margin-top:8px;background:var(--sage);color:#fff;border:none;padding:7px 14px;border-radius:6px;font-weight:700;font-size:12px;cursor:pointer;">Split into fields below</button>
 
-    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:18px 0 4px;">Category</label>
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:18px 0 4px;">Meal</label>
+    <select id="newRecipeMealType" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;">
+      <option value="dinner">Dinner</option>
+      <option value="breakfast">Breakfast</option>
+      <option value="lunch">Lunch</option>
+      <option value="snack">Snack</option>
+    </select>
+
+    <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Category</label>
     <select id="newRecipeProtein" style="width:100%;padding:8px;border:1.5px solid var(--sage);border-radius:6px;font-family:'Karla',sans-serif;font-size:13px;"></select>
 
     <label style="display:block;font-size:12px;font-weight:700;color:var(--terracotta-dark);margin:14px 0 4px;">Title</label>
@@ -368,14 +377,124 @@ const RECIPES = [
  steps:["Preheat oven 375°F. Mix meat, bread crumbs, eggs, 1/2 cup marinara, and seasoning.","Press half the mixture into a loaf pan. Layer mozzarella and pepperoni down the center.","Top with remaining meat mixture, sealing edges.","Bake 45 min, then top with extra marinara and mozzarella.","Bake 15 more min until internal temp hits 160°F. Rest 5 min before slicing."]}
 ];
 
-const PROTEIN_LABELS = {beef:"🐄 Beef", pork:"🐷 Pork", chicken:"🐔 Chicken", turkey:"🦃 Turkey", seafood:"🐟 Seafood", meatless:"🥦 Meatless", flex:"🔀 Flex-Protein"};
+// Breakfast, lunch, and snack recipes — built from the owner's own
+// handwritten list rather than generic filler. Not organized by protein
+// like dinner (mealType:"dinner" is assumed by default for anything above
+// this point, set in tagRecipeMethodAndTime) — these use `mealType` plus a
+// meal-appropriate sub-category in `protein` (egg/griddle/handheld/grab for
+// breakfast, sandwich/salad/leftovers for lunch, sweet/savory/drink for
+// snacks) so the existing card/filter UI works unchanged.
+const BREAKFAST_LUNCH_SNACK_RECIPES = [
+{mealType:"breakfast",protein:"griddle",title:"McGriddle Casserole",meta:"BAKE · Prep 15 min · Cook 35 min",
+ ingredients:["1 lb breakfast sausage","6 large eggs","1 cup milk","2 cups frozen shredded hash browns, thawed","1 (7oz) box mini pancakes (or pancake mix made into mini pancakes)","1.5 cups shredded cheddar","1/4 cup maple syrup, plus more for serving","Salt & pepper"],
+ steps:["Preheat oven to 375°F, grease a 9x13 baking dish.","Brown sausage in a skillet, breaking it apart, until no pink remains. Drain.","Whisk eggs, milk, maple syrup, salt, and pepper in a bowl.","Layer hash browns, sausage, mini pancakes, and half the cheese in the baking dish.","Pour egg mixture evenly over the top. Sprinkle with remaining cheese.","Bake 30–35 min until eggs are set and top is golden.","Rest 5 min, slice, and serve with extra maple syrup."]},
+{mealType:"breakfast",protein:"handheld",title:"Breakfast Sandwiches",meta:"STOVETOP + BAKE · Prep 10 min · Cook 20 min",
+ ingredients:["6 English muffins, split","6 large eggs","6 slices Canadian bacon or sausage patties","6 slices cheddar or American cheese","Butter, for the muffins"],
+ steps:["Preheat oven to 350°F. Toast muffins lightly, butter the cut sides.","Crack eggs into a greased muffin tin, one per cup. Bake 12–14 min until whites are set.","Meanwhile, cook Canadian bacon or sausage patties in a skillet until warmed through.","Assemble: muffin bottom, egg, meat, cheese, muffin top.","Wrap individually in foil for grab-and-go, or serve immediately."]},
+{mealType:"breakfast",protein:"handheld",title:"Breakfast Burritos",meta:"STOVETOP · Prep 15 min · Cook 15 min",
+ ingredients:["8 large eggs","1 cup frozen diced hash browns","1 lb breakfast sausage","1.5 cups shredded cheddar","6 large flour tortillas","Salt & pepper","Salsa, for serving"],
+ steps:["Cook sausage in a skillet until browned. Remove, drain, set aside.","In the same skillet, cook hash browns until golden, 6–8 min.","Whisk eggs with salt and pepper, scramble in the skillet until just set.","Warm tortillas. Fill each with eggs, sausage, hash browns, and cheese.","Fold in the sides and roll tightly. Serve warm, or wrap and freeze — reheat from frozen 2–3 min per side in a skillet or 90 sec in the microwave."]},
+{mealType:"breakfast",protein:"grab",title:"Cereal",meta:"NO-COOK · Prep 2 min",
+ ingredients:["Cereal of choice","Milk","Sliced banana or berries (optional)"],
+ steps:["Pour cereal into a bowl.","Add milk.","Top with fruit if using. Serve immediately while still crunchy."]},
+{mealType:"breakfast",protein:"egg",title:"All-Star Combo Plate",meta:"STOVETOP · Prep 10 min · Cook 20 min",
+ ingredients:["4 large eggs","4 sausage links or 4 strips bacon","2 cups frozen hash browns","4 slices toast or 4 pancakes","Butter, salt & pepper"],
+ steps:["Cook sausage or bacon in a skillet until done; set aside, keep the drippings.","Cook hash browns in the drippings until crisp and golden, 8–10 min.","Cook eggs to your preference (fried, scrambled, or over easy) in a separate pan.","Toast bread or make pancakes.","Plate everything together for a full combo breakfast."]},
+{mealType:"breakfast",protein:"griddle",title:"Classic Waffles",meta:"STOVETOP (waffle iron) · Prep 10 min · Cook 15 min",
+ ingredients:["2 cups all-purpose flour","2 Tbsp sugar","1 Tbsp baking powder","1/2 tsp salt","2 large eggs","1.75 cups milk","1/3 cup vegetable oil or melted butter","1 tsp vanilla"],
+ steps:["Preheat waffle iron. Whisk flour, sugar, baking powder, and salt in a bowl.","In a separate bowl, whisk eggs, milk, oil, and vanilla.","Pour wet ingredients into dry, stir until just combined (a few lumps are fine).","Pour batter onto the hot waffle iron per manufacturer instructions, cook until golden.","Serve with butter and maple syrup."]},
+{mealType:"breakfast",protein:"grab",title:"Protein Parfait Cup",meta:"NO-COOK · Prep 5 min",
+ ingredients:["1 cup Greek yogurt","1/2 cup granola","1/2 cup mixed berries","1 scoop vanilla protein powder (optional)","1 Tbsp honey"],
+ steps:["Stir protein powder into yogurt until smooth, if using.","Layer yogurt, granola, and berries in a cup or jar.","Repeat layers, drizzle with honey. Serve immediately or refrigerate up to 1 day."]},
+{mealType:"breakfast",protein:"handheld",title:"Sausage Biscuits",meta:"BAKE · Prep 10 min · Cook 15 min",
+ ingredients:["1 (16.3oz) can refrigerated biscuits (8ct)","8 breakfast sausage patties","8 slices cheddar cheese (optional)"],
+ steps:["Bake biscuits per package directions until golden.","Meanwhile, cook sausage patties in a skillet until browned through, ~4 min per side.","Split warm biscuits, add a sausage patty and cheese if using.","Serve warm, or wrap and freeze for grab-and-go mornings."]},
+{mealType:"breakfast",protein:"griddle",title:"Pancake Sausage Dogs",meta:"STOVETOP · Prep 15 min · Cook 15 min",
+ ingredients:["8 breakfast sausage links","1.5 cups pancake mix","1 cup milk","1 egg","2 Tbsp maple syrup, plus more for dipping","8 wooden skewers or popsicle sticks","Vegetable oil, for the pan"],
+ steps:["Cook sausage links per package directions until browned; pat dry, insert a stick into each.","Whisk pancake mix, milk, egg, and maple syrup into a thick batter.","Dip each sausage into batter, coating evenly.","Cook in an oiled skillet over medium heat, turning, until golden on all sides, 6–8 min.","Serve with syrup for dipping."]},
+{mealType:"breakfast",protein:"grab",title:"Cinnamon Roll Overnight Oats",meta:"NO-COOK · Prep 10 min (chill overnight)",
+ ingredients:["1 cup old-fashioned oats","1 cup milk","1/2 cup vanilla Greek yogurt","1 Tbsp maple syrup","1 tsp cinnamon","1/2 tsp vanilla","2 Tbsp cream cheese, softened","1 Tbsp powdered sugar","1 tsp milk (for glaze)"],
+ steps:["Stir oats, milk, yogurt, maple syrup, cinnamon, and vanilla together in a jar.","Cover, refrigerate overnight (at least 4 hrs).","Before serving, whisk cream cheese, powdered sugar, and 1 tsp milk into a glaze.","Drizzle glaze over the oats and stir in or swirl on top."]},
+{mealType:"breakfast",protein:"handheld",title:"Egg & Cheese Breakfast Biscuits",meta:"BAKE · Prep 10 min · Cook 15 min",
+ ingredients:["1 (16.3oz) can refrigerated biscuits (8ct)","8 large eggs","8 slices American cheese","Salt & pepper"],
+ steps:["Bake biscuits per package directions until golden.","Scramble eggs with salt and pepper in a skillet until just set.","Split warm biscuits, fill with scrambled egg and a slice of cheese.","Serve warm, or wrap individually and freeze for later."]},
+{mealType:"breakfast",protein:"egg",title:"Potato & Ham Egg Omelette",meta:"STOVETOP · Prep 10 min · Cook 15 min",
+ ingredients:["6 large eggs","1 cup diced cooked potatoes","1 cup diced ham","1/2 onion, diced","1 cup shredded cheddar","2 Tbsp butter","Salt & pepper"],
+ steps:["Melt butter in a skillet, sauté onion and potatoes until golden, 6–8 min.","Add ham, cook 2 min to warm through.","Whisk eggs with salt and pepper, pour over the potato mixture.","Cook until edges set, sprinkle cheese over half, fold the omelette over.","Cook 1–2 more min until cheese melts. Slide onto a plate and serve."]},
+{mealType:"breakfast",protein:"handheld",title:"Sausage in a Blanket",meta:"BAKE · Prep 10 min · Cook 15 min",
+ ingredients:["1 (8oz) can crescent roll dough","16 cocktail sausage links","1 Tbsp melted butter","Yellow mustard or honey mustard, for dipping"],
+ steps:["Preheat oven to 375°F. Unroll crescent dough, cut each triangle into 2 long strips.","Wrap each strip around a cocktail sausage.","Arrange on a baking sheet, brush with melted butter.","Bake 12–15 min until golden brown.","Serve warm with mustard for dipping."]},
+
+{mealType:"lunch",protein:"leftovers",title:"Leftovers Night",meta:"REHEAT · Prep 5 min",
+ ingredients:["Leftover dinner portions from earlier in the week","Fresh veggie or fruit side (optional)"],
+ steps:["Portion out leftovers into microwave-safe containers.","Reheat until steaming hot throughout (165°F), stirring halfway if using a microwave.","Add a quick side of fruit or veggies if you have them on hand.","A good way to use up what's left before it goes to waste — no new cooking needed."]},
+{mealType:"lunch",protein:"sandwich",title:"Chicken Salad Sandwich & Chips",meta:"NO-COOK · Prep 10 min",
+ ingredients:["2 cups shredded or diced cooked chicken","1/3 cup mayonnaise","1 celery stalk, diced","1 Tbsp diced red onion","Salt & pepper","8 slices bread","Chips, for serving"],
+ steps:["Mix chicken, mayo, celery, onion, salt, and pepper in a bowl.","Spread onto bread to make 4 sandwiches.","Serve with a side of chips."]},
+{mealType:"lunch",protein:"sandwich",title:"Bologna Sandwich & Chips",meta:"NO-COOK · Prep 5 min",
+ ingredients:["8 slices bologna","8 slices bread","4 slices American cheese","Mayonnaise or mustard","Chips, for serving"],
+ steps:["Spread mayo or mustard on bread.","Layer bologna and cheese, close sandwiches.","Serve with a side of chips."]},
+{mealType:"lunch",protein:"sandwich",title:"PB&J Sandwich & Chips",meta:"NO-COOK · Prep 5 min",
+ ingredients:["8 slices bread","1/2 cup peanut butter","1/2 cup jelly or jam","Chips, for serving"],
+ steps:["Spread peanut butter on 4 slices of bread, jelly on the other 4.","Press slices together to make 4 sandwiches.","Serve with a side of chips."]},
+{mealType:"lunch",protein:"salad",title:"Salad with Chicken",meta:"STOVETOP · Prep 10 min · Cook 10 min",
+ ingredients:["2 chicken breasts","1 Tbsp olive oil","Salt & pepper","1 head romaine or mixed greens, chopped","1 cup cherry tomatoes, halved","1/2 cucumber, sliced","1/4 cup shredded cheddar or feta","Salad dressing of choice"],
+ steps:["Season chicken with salt and pepper, cook in an oiled skillet 5–6 min per side until 165°F internal.","Rest 5 min, slice.","Toss greens, tomatoes, cucumber, and cheese in a bowl.","Top with sliced chicken and dressing of choice."]},
+
+{mealType:"snack",protein:"sweet",title:"Granola Bars",meta:"BAKE · Prep 10 min · Cook 20 min",
+ ingredients:["2 cups old-fashioned oats","1/2 cup honey","1/3 cup peanut butter","1/4 cup brown sugar","1 tsp vanilla","1/2 cup mini chocolate chips","1/4 tsp salt"],
+ steps:["Preheat oven to 350°F, line an 8x8 pan with parchment.","Warm honey, peanut butter, brown sugar, and salt in a saucepan until smooth.","Stir in oats and vanilla until well coated. Fold in chocolate chips once slightly cooled.","Press firmly into the pan.","Bake 15–18 min until edges are golden. Cool completely before slicing into bars."]},
+{mealType:"snack",protein:"sweet",title:"Apple Muffins",meta:"BAKE · Prep 15 min · Cook 20 min",
+ ingredients:["2 cups all-purpose flour","1 tsp baking soda","1 tsp cinnamon","1/2 tsp salt","2 eggs","3/4 cup brown sugar","1/2 cup vegetable oil","1 tsp vanilla","1.5 cups diced apple"],
+ steps:["Preheat oven to 375°F, line a muffin tin with liners.","Whisk flour, baking soda, cinnamon, and salt in a bowl.","In another bowl, whisk eggs, brown sugar, oil, and vanilla.","Combine wet and dry ingredients, fold in diced apple.","Divide batter among muffin cups. Bake 18–20 min until a toothpick comes out clean."]},
+{mealType:"snack",protein:"savory",title:"Chickpea Pinwheels",meta:"NO-COOK · Prep 15 min",
+ ingredients:["1 (15oz) can chickpeas, drained","2 Tbsp olive oil","1 clove garlic","1 Tbsp lemon juice","Salt & pepper","4 large flour tortillas","1 cup baby spinach","1/2 cup shredded carrots"],
+ steps:["Blend chickpeas, olive oil, garlic, lemon juice, salt, and pepper until smooth (add water 1 Tbsp at a time if needed).","Spread mixture evenly over each tortilla.","Layer spinach and carrots on top.","Roll tightly, slice into pinwheels, and serve."]},
+{mealType:"snack",protein:"sweet",title:"Chia Pudding",meta:"NO-COOK · Prep 5 min (chill 4 hrs)",
+ ingredients:["1/4 cup chia seeds","1 cup milk of choice","1 Tbsp honey or maple syrup","1/2 tsp vanilla","Fresh fruit, for topping"],
+ steps:["Whisk chia seeds, milk, honey, and vanilla together in a jar.","Refrigerate at least 4 hrs or overnight, stirring once after 30 min to prevent clumping.","Top with fresh fruit before serving."]},
+{mealType:"snack",protein:"sweet",title:"PB Banana Bites",meta:"FREEZER · Prep 10 min (freeze 1 hr)",
+ ingredients:["2 bananas, sliced into rounds","1/2 cup peanut butter","1/4 cup mini chocolate chips (optional)"],
+ steps:["Spread a small amount of peanut butter between two banana slices to make a sandwich.","Repeat with remaining banana slices.","Roll edges in mini chocolate chips if using.","Freeze on a parchment-lined tray at least 1 hr until firm."]},
+{mealType:"snack",protein:"sweet",title:"Frozen Jello Pops",meta:"FREEZER · Prep 10 min (freeze 3 hrs)",
+ ingredients:["1 (3oz) box flavored gelatin","1 cup boiling water","1/2 cup cold water","Paper cups or popsicle molds"],
+ steps:["Dissolve gelatin in boiling water, stirring 2 min.","Stir in cold water.","Pour into paper cups or popsicle molds, insert sticks if using molds.","Freeze at least 3 hrs until solid."]},
+{mealType:"snack",protein:"sweet",title:"Creamy Jello Cups",meta:"NO-COOK · Prep 10 min (chill 3 hrs)",
+ ingredients:["1 (3oz) box flavored gelatin","1 cup boiling water","1 cup cold milk","1 cup whipped topping"],
+ steps:["Dissolve gelatin in boiling water, stirring 2 min. Let cool 5 min.","Whisk in cold milk in place of the usual cold water.","Refrigerate 20 min until slightly thickened, then fold in whipped topping.","Pour into cups, refrigerate at least 3 hrs until set."]},
+{mealType:"snack",protein:"sweet",title:"Cottage Cheese Cookie Dough Dip",meta:"NO-COOK · Prep 10 min",
+ ingredients:["1 cup cottage cheese","2 Tbsp honey or maple syrup","1 tsp vanilla","2 Tbsp flour, heat-treated (see note)","1/4 cup mini chocolate chips","Pinch of salt"],
+ steps:["Blend cottage cheese until completely smooth.","Add honey, vanilla, flour, and salt, blend again until combined.","Stir in mini chocolate chips by hand.","Serve chilled with fruit, graham crackers, or pretzels for dipping."],
+ note:"Microwave the flour 30 sec before adding, to make it safe to eat raw."},
+{mealType:"snack",protein:"sweet",title:"Homemade Peanut Butter Bars",meta:"NO-COOK · Prep 15 min (chill 1 hr)",
+ ingredients:["1 cup peanut butter","1/2 cup honey","1 cup graham cracker crumbs","1 cup powdered sugar","1 cup chocolate chips, melted"],
+ steps:["Warm peanut butter and honey together until smooth.","Stir in graham cracker crumbs and powdered sugar until combined.","Press into a parchment-lined 8x8 pan.","Spread melted chocolate over the top.","Chill at least 1 hr, then slice into bars."]},
+{mealType:"snack",protein:"sweet",title:"Strawberry Banana Yogurt Muffins",meta:"BAKE · Prep 15 min · Cook 20 min",
+ ingredients:["2 cups all-purpose flour","1 tsp baking soda","1/2 tsp salt","2 ripe bananas, mashed","1/2 cup vanilla Greek yogurt","1/2 cup honey","2 eggs","1 tsp vanilla","1 cup diced strawberries"],
+ steps:["Preheat oven to 375°F, line a muffin tin with liners.","Whisk flour, baking soda, and salt in a bowl.","In another bowl, mix mashed banana, yogurt, honey, eggs, and vanilla.","Combine wet and dry ingredients, fold in strawberries.","Divide among muffin cups. Bake 18–20 min until a toothpick comes out clean."]},
+{mealType:"snack",protein:"drink",title:"Frappé Coffee",meta:"NO-COOK · Prep 5 min",
+ ingredients:["2 Tbsp instant coffee","2 Tbsp sugar","2 Tbsp cold water","Ice","1 cup milk"],
+ steps:["Combine instant coffee, sugar, and cold water in a jar or shaker.","Shake vigorously (or blend) about 30 sec until thick and foamy.","Fill a glass with ice, spoon the coffee foam over the top.","Pour milk over the ice and foam. Stir before drinking."]},
+{mealType:"snack",protein:"drink",title:"Watermelon Crush",meta:"NO-COOK · Prep 5 min",
+ ingredients:["3 cups cubed watermelon, seeded","1 Tbsp lime juice","1 tsp honey (optional)","Ice","Mint leaves, for garnish"],
+ steps:["Blend watermelon, lime juice, and honey until smooth.","Strain if you prefer a smoother texture (optional).","Pour over ice, garnish with mint, and serve immediately."]}
+];
+RECIPES.push(...BREAKFAST_LUNCH_SNACK_RECIPES);
+
+const PROTEIN_LABELS = {
+  beef:"🐄 Beef", pork:"🐷 Pork", chicken:"🐔 Chicken", turkey:"🦃 Turkey", seafood:"🐟 Seafood", meatless:"🥦 Meatless", flex:"🔀 Flex-Protein",
+  egg:"🍳 Egg Dishes", griddle:"🥞 Griddle & Baked", handheld:"🌯 Handheld", grab:"🥣 Grab & Go",
+  sandwich:"🥪 Sandwiches", salad:"🥗 Salads", leftovers:"♻️ Leftovers",
+  sweet:"🍪 Sweet Snacks", savory:"🧆 Savory Snacks", drink:"🥤 Drinks"
+};
+const MEAL_TYPE_LABELS = { dinner:"🍽️ Dinner", breakfast:"🍳 Breakfast", lunch:"🥪 Lunch", snack:"🍪 Snacks" };
 // Recipe "meta" strings (e.g. "SHEET PAN · Prep 15 min · Cook 1 hr") already
 // carry cooking method and timing — parsed here instead of adding new
 // fields, so existing and custom recipes both get sort/filter support
 // automatically. Method text before the first "·" often names more than
 // one method ("CROCKPOT + BAKE FINISH", "STOVETOP / GRILL"), so a recipe
 // can match multiple method filters rather than only its first word.
-const METHOD_KEYWORDS = ["crockpot","sheet pan","bake","stovetop","freezer","grill"];
+const METHOD_KEYWORDS = ["crockpot","sheet pan","bake","stovetop","freezer","grill","no-cook","reheat"];
 function detectMethods(meta){
   const firstSeg = (meta || "").split("·")[0].toLowerCase();
   const found = METHOD_KEYWORDS.filter(k => firstSeg.includes(k));
@@ -400,6 +519,7 @@ function estimateMinutes(meta){
   return found ? total : null;
 }
 function tagRecipeMethodAndTime(r){
+  if(!r.mealType) r.mealType = "dinner";
   r.methods = detectMethods(r.meta);
   r.totalMinutes = estimateMinutes(r.meta);
 }
@@ -411,6 +531,7 @@ const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBh
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 let userId = null;
 
+let activeMealType = "dinner";
 let activeFilter = "all";
 let activeMethodFilter = "all";
 let sortMode = "default"; // "default" | "quick" | "long"
@@ -457,6 +578,7 @@ async function initUser(){
       customRows.forEach(row => {
         const r = {
           id: row.id,
+          mealType: row.meal_type || "dinner",
           protein: row.protein,
           title: row.title,
           meta: row.meta || "Your recipe",
@@ -850,8 +972,28 @@ function escapeHtml(s){
   return d.innerHTML;
 }
 
+function renderMealTypeFilters(){
+  const mealTypes = ["dinner", ...new Set(RECIPES.map(r => r.mealType).filter(m => m !== "dinner"))];
+  const el = document.getElementById("mealTypeFilters");
+  el.innerHTML = "";
+  mealTypes.forEach(m => {
+    const chip = document.createElement("button");
+    chip.className = "filter-chip" + (activeMealType === m ? " active" : "");
+    chip.style.cssText = "font-size:14px;padding:9px 18px;";
+    chip.textContent = MEAL_TYPE_LABELS[m] || m;
+    chip.addEventListener("click", () => {
+      activeMealType = m;
+      // Protein/category filter resets when switching meal types — a
+      // dinner protein filter like "Beef" has no meaning under Breakfast.
+      activeFilter = "all";
+      renderAll();
+    });
+    el.appendChild(chip);
+  });
+}
+
 function renderFilters(){
-  const proteins = ["all", ...new Set(RECIPES.map(r => r.protein))];
+  const proteins = ["all", ...new Set(RECIPES.filter(r => r.mealType === activeMealType).map(r => r.protein))];
   const el = document.getElementById("filters");
   el.innerHTML = "";
   proteins.forEach(p => {
@@ -863,9 +1005,9 @@ function renderFilters(){
   });
 }
 
-const METHOD_LABELS = { crockpot: "🍲 Crockpot", "sheet pan": "🍪 Sheet Pan", bake: "🔥 Bake", stovetop: "🍳 Stovetop", freezer: "❄️ Freezer", grill: "🔥 Grill", other: "Other" };
+const METHOD_LABELS = { crockpot: "🍲 Crockpot", "sheet pan": "🍪 Sheet Pan", bake: "🔥 Bake", stovetop: "🍳 Stovetop", freezer: "❄️ Freezer", grill: "🔥 Grill", "no-cook": "🥣 No-Cook", reheat: "♻️ Reheat", other: "Other" };
 function renderMethodFilters(){
-  const methods = ["all", ...new Set(RECIPES.flatMap(r => r.methods))];
+  const methods = ["all", ...new Set(RECIPES.filter(r => r.mealType === activeMealType).flatMap(r => r.methods))];
   const el = document.getElementById("methodFilters");
   el.innerHTML = "";
   methods.forEach(m => {
@@ -881,6 +1023,7 @@ function renderSections(){
   const container = document.getElementById("sections");
   container.innerHTML = "";
   const visible = r =>
+    r.mealType === activeMealType &&
     (activeFilter === "all" || r.protein === activeFilter) &&
     (activeMethodFilter === "all" || r.methods.includes(activeMethodFilter));
   const proteins = [...new Set(RECIPES.filter(visible).map(r => r.protein))];
@@ -979,6 +1122,7 @@ function renderPlanBar(){
 }
 
 function renderAll(){
+  renderMealTypeFilters();
   renderFilters();
   renderMethodFilters();
   renderSections();
@@ -1179,12 +1323,28 @@ document.getElementById("overlay").addEventListener("click", (e) => {
 
 // --- Add-your-own-recipe ---
 
-Object.keys(PROTEIN_LABELS).forEach(p => {
-  const opt = document.createElement("option");
-  opt.value = p;
-  opt.textContent = PROTEIN_LABELS[p];
-  document.getElementById("newRecipeProtein").appendChild(opt);
-});
+// Which `protein`/category values are valid under each meal type — the
+// category dropdown re-populates when the meal changes, since "Beef"
+// means nothing under Breakfast and "Griddle & Baked" means nothing
+// under Dinner.
+const MEAL_CATEGORIES = {
+  dinner: ["beef","pork","chicken","turkey","seafood","meatless","flex"],
+  breakfast: ["egg","griddle","handheld","grab"],
+  lunch: ["sandwich","salad","leftovers"],
+  snack: ["sweet","savory","drink"]
+};
+function populateCategoryOptions(mealType){
+  const el = document.getElementById("newRecipeProtein");
+  el.innerHTML = "";
+  MEAL_CATEGORIES[mealType].forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = PROTEIN_LABELS[p];
+    el.appendChild(opt);
+  });
+}
+populateCategoryOptions("dinner");
+document.getElementById("newRecipeMealType").addEventListener("change", (e) => populateCategoryOptions(e.target.value));
 
 // Best-effort split of a pasted recipe into title/ingredients/steps. Looks
 // for explicit "Ingredients"/"Instructions" headers first (most recipe
@@ -1240,6 +1400,7 @@ document.getElementById("addRecipeOverlay").addEventListener("click", (e) => {
 document.getElementById("saveRecipeBtn").addEventListener("click", async () => {
   const statusEl = document.getElementById("addRecipeStatus");
   const title = document.getElementById("newRecipeTitle").value.trim();
+  const mealType = document.getElementById("newRecipeMealType").value;
   const protein = document.getElementById("newRecipeProtein").value;
   const meta = document.getElementById("newRecipeMeta").value.trim();
   const ingredients = document.getElementById("newRecipeIngredients").value.split("\n").map(l => l.trim()).filter(Boolean);
@@ -1256,7 +1417,7 @@ document.getElementById("saveRecipeBtn").addEventListener("click", async () => {
 
   statusEl.textContent = "Saving…";
   const { data, error } = await supabaseClient.from("custom_recipes").insert({
-    user_id: userId, protein, title, meta: meta || null, ingredients, steps
+    user_id: userId, meal_type: mealType, protein, title, meta: meta || null, ingredients, steps
   }).select().single();
 
   if(error){
@@ -1265,14 +1426,14 @@ document.getElementById("saveRecipeBtn").addEventListener("click", async () => {
   }
 
   const newRecipe = {
-    id: data.id, protein, title, meta: meta || "Your recipe", source: "Your recipe",
+    id: data.id, mealType, protein, title, meta: meta || "Your recipe", source: "Your recipe",
     ingredients, steps, isCustom: true
   };
   tagRecipeMethodAndTime(newRecipe);
   RECIPES.push(newRecipe);
 
   ["pasteBox","newRecipeTitle","newRecipeMeta","newRecipeIngredients","newRecipeSteps"].forEach(id => document.getElementById(id).value = "");
-  statusEl.textContent = "Saved! Find it under " + (PROTEIN_LABELS[protein] || protein) + ".";
+  statusEl.textContent = "Saved! Find it under " + (MEAL_TYPE_LABELS[mealType] || mealType) + " → " + (PROTEIN_LABELS[protein] || protein) + ".";
   renderAll();
 });
 

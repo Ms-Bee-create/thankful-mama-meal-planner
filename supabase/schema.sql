@@ -40,6 +40,7 @@ alter table public.kroger_connections enable row level security;
 create table if not exists public.custom_recipes (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  meal_type text not null default 'dinner',
   protein text not null,
   title text not null,
   meta text,
@@ -48,6 +49,10 @@ create table if not exists public.custom_recipes (
   cart_url text,
   created_at timestamptz not null default now()
 );
+
+-- Adds the column if this table already exists from before meal_type
+-- existed — safe to run even on a fresh table.
+alter table public.custom_recipes add column if not exists meal_type text not null default 'dinner';
 
 alter table public.custom_recipes enable row level security;
 
